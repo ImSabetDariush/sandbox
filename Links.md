@@ -2,6 +2,12 @@
 > Click on any link below to start downloading directly.<br><br/>
 
 
+### 📅 2026-04-29 14:36 IR
+- 🎬 [Fedora 44 Deep Dive： DNF5, Nix, Plasma Login Manager & the Future of GNU⧸Linux.mp4](https://github.com/ImSabetDariush/sandbox/raw/main/dl/Fedora%2044%20Deep%20Dive%EF%BC%9A%20DNF5%2C%20Nix%2C%20Plasma%20Login%20Manager%20%26%20the%20Future%20of%20GNU%E2%A7%B8Linux.mp4) `56.3MB`
+
+---
+
+
 ### 📅 2026-04-29 14:34 IR
 - 🎬 [Re-Moving! (ElectroVLOG-009).mp4](https://github.com/ImSabetDariush/sandbox/raw/main/dl/Re-Moving%21%20%28ElectroVLOG-009%29.mp4) `15.7MB`
 
