@@ -2,6 +2,16 @@
 > Click on any link below to start downloading directly.<br><br/>
 
 
+### 📅 2026-05-01 03:16 IR
+- 🗜️ [Local Gemma 4 with OpenCode & llama.cpp ｜ Build a Local RAG with LangChain ｜ 🔴 Live.mp4.zip](https://github.com/ImSabetDariush/sandbox/raw/main/dl/Local%20Gemma%204%20with%20OpenCode%20%26%20llama.cpp%20%EF%BD%9C%20Build%20a%20Local%20RAG%20with%20LangChain%20%EF%BD%9C%20%F0%9F%94%B4%20Live.mp4.zip) `2.0MB`
+
+- 🗜️ [Local Gemma 4 with OpenCode & llama.cpp ｜ Build a Local RAG with LangChain ｜ 🔴 Live.mp4.z01](https://github.com/ImSabetDariush/sandbox/raw/main/dl/Local%20Gemma%204%20with%20OpenCode%20%26%20llama.cpp%20%EF%BD%9C%20Build%20a%20Local%20RAG%20with%20LangChain%20%EF%BD%9C%20%F0%9F%94%B4%20Live.mp4.z01) `95.0MB`
+
+- 🗜️ [Local Gemma 4 with OpenCode & llama.cpp ｜ Build a Local RAG with LangChain ｜ 🔴 Live.mp4.zip](https://github.com/ImSabetDariush/sandbox/raw/main/dl/Local%20Gemma%204%20with%20OpenCode%20%26%20llama.cpp%20%EF%BD%9C%20Build%20a%20Local%20RAG%20with%20LangChain%20%EF%BD%9C%20%F0%9F%94%B4%20Live.mp4.zip) `2.0MB`
+
+---
+
+
 ### 📅 2026-05-01 02:51 IR
 - 🎬 [Gemma 4 Small Models Are INSANE – E2B & E4B Hands-On Testing!.mp4](https://github.com/ImSabetDariush/sandbox/raw/main/dl/Gemma%204%20Small%20Models%20Are%20INSANE%20%E2%80%93%20E2B%20%26%20E4B%20Hands-On%20Testing%21.mp4) `47.4MB`
 
