@@ -2,6 +2,12 @@
 > Click on any link below to start downloading directly.<br><br/>
 
 
+### 📅 2026-04-30 17:35 IR
+- 🎬 [TOP 3 FREE Open Source Coding LLMs in 2026!!.mp4](https://github.com/ImSabetDariush/sandbox/raw/main/dl/TOP%203%20FREE%20Open%20Source%20Coding%20LLMs%20in%202026%21%21.mp4) `12.9MB`
+
+---
+
+
 ### 📅 2026-04-30 17:07 IR
 - 🎬 [My Honest Thoughts about Deepseek.mp4](https://github.com/ImSabetDariush/sandbox/raw/main/dl/My%20Honest%20Thoughts%20about%20Deepseek.mp4) `33.2MB`
 
