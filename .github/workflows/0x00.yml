@@ -18,7 +18,7 @@ on:
           - 'Audio (MP3 format)'
           - 'Best (Highest available)'
       password:
-        description: 'ZIP Password (Optional - No ZIP applied if under 95MB)'
+        description: 'ZIP Password (Optional - No ZIP applied if empty & under 95MB)'
         required: false
         type: string
         default: ''
@@ -29,20 +29,23 @@ jobs:
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     permissions:
-      contents: read  # دیگر نیازی به write نیست چون Artifact آپلود می‌شود
+      contents: write
     steps:
-      - name: Checkout Repository (only for yt-dlp extractors)
+      - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - name: Install Dependencies
+      - name: Fast Install Dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends aria2 ffmpeg split
+          sudo apt-get install -y --no-install-recommends aria2 ffmpeg
           
           sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
           sudo chmod a+rx /usr/local/bin/yt-dlp
+          
+          curl -fsSL https://bun.com/install | bash
+          echo "$HOME/.bun/bin" >> $GITHUB_PATH
 
       - name: Setup YouTube Cookies 
         env:
@@ -54,118 +57,189 @@ jobs:
             touch youtube_cookies.txt
           fi
 
-      - name: Download & Process Files
+      - name: Setup Bunkr script
+        run: |
+          cat << 'EOF' > bunkr.py
+          import os, sys, json, time, base64, requests
+          from math import floor
+          from itertools import cycle
+          from urllib.parse import urlparse
+
+          BUNKRR_API = "https://bunkr.cr/api/vs"
+          BUNKRR_DOMAINS = ("bunkr.si", "bunkr.fi", "bunkr.ru", "bunkr.cr", "bunkr.rip", "bunkrr.su")
+          BUNKRR_DOWNLOAD_HEADERS = {"User-Agent": "Mozilla/5.0", "Referer": "https://get.bunkrr.su/"}
+          _offline_subs = set()
+
+          def is_bunkr_url(url): return any(dom in url for dom in BUNKRR_DOMAINS)
+          
+          def get_slug(url): return __import__("re").search(r"/([a-zA-Z0-9_-]+)$", url).group(1) if __import__("re").search(r"/([a-zA-Z0-9_-]+)$", url) else None
+          
+          def fetch_api(url):
+              slug = get_slug(url)
+              if not slug: return None
+              for dom in (BUNKRR_API.split("/")[2], *_offline_subs):
+                  try:
+                      resp = requests.post(f"https://{dom}/api/vs", json={"slug": slug}, headers=BUNKRR_DOWNLOAD_HEADERS, timeout=30)
+                      if resp.status_code == 200: return resp.json()
+                      if resp.status_code == 502: _offline_subs.add(dom)
+                  except: continue
+              return None
+
+          def decrypt(api_resp):
+              try:
+                  t, enc = api_resp["timestamp"], base64.b64decode(api_resp["url"])
+                  dec = bytearray(b ^ next(cycle(f"SECRET_KEY_{floor(t/3600)}".encode("utf-8"))) for b in enc)
+                  return dec.decode("utf-8", errors="ignore")
+              except: return None
+
+          if __name__ == "__main__":
+              url = sys.argv[1]
+              outdir = sys.argv[2]
+              api_resp = fetch_api(url)
+              dl_link = decrypt(api_resp) if api_resp else None
+              if dl_link:
+                  filepath = os.path.join(outdir, urlparse(dl_link).path.rstrip("/").split("/")[-1])
+                  resp = requests.get(dl_link, headers=BUNKRR_DOWNLOAD_HEADERS, stream=True)
+                  with open(filepath, "wb") as f:
+                      for c in resp.iter_content(8192): f.write(c) if c else None
+          EOF
+
+      - name: Download & Process Files (Supports Multiple URLs)
         shell: bash
         run: |
-          set -euo pipefail
-          
           RAW_URLS="${{ github.event.inputs.url }}"
           QUALITY="${{ github.event.inputs.quality }}"
-          ZIP_PASS="${{ github.event.inputs.password }}"
           
           FORMATTED_URLS=$(echo "$RAW_URLS" | tr ',' ' ' | tr '\n' ' ')
-          mkdir -p tmp_downloads final_artifacts
           
-          # تنظیم کیفیت yt-dlp
-          case "$QUALITY" in
-            *720p*)  YTDLP_F="-f bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4][height<=720]/best --merge-output-format mp4" ;;
-            *480p*)  YTDLP_F="-f bestvideo[ext=mp4][height<=480]+bestaudio[ext=m4a]/best[ext=mp4][height<=480]/best --merge-output-format mp4" ;;
-            *360p*)  YTDLP_F="-f bestvideo[ext=mp4][height<=360]+bestaudio[ext=m4a]/best[ext=mp4][height<=360]/best --merge-output-format mp4" ;;
-            *Audio*) YTDLP_F="-x --audio-format mp3" ;;
-            *)       YTDLP_F="--merge-output-format mp4" ;;
-          esac
+          rm -rf tmp_downloads
+          mkdir -p tmp_downloads dl
           
-          download_video() {
-            local url="$1"
-            local outdir="$2"
-            echo "▶️ Downloading with yt-dlp: $url"
-            COOKIE_ARG=""
-            [ -s youtube_cookies.txt ] && COOKIE_ARG="--cookies youtube_cookies.txt"
-            yt-dlp $COOKIE_ARG $YTDLP_F -o "$outdir/%(title)s.%(ext)s" "$url"
-          }
-          
-          download_direct() {
-            local url="$1"
-            local outdir="$2"
-            echo "▶️ Direct download with aria2c: $url"
-            aria2c --split=4 --max-connection-per-server=4 --timeout=60 --dir="$outdir" "$url"
-          }
-          
+          if [[ "$QUALITY" == *"720p"* ]]; then
+            YTDLP_F="-f bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4][height<=720]/best --merge-output-format mp4"
+          elif [[ "$QUALITY" == *"480p"* ]]; then
+            YTDLP_F="-f bestvideo[ext=mp4][height<=480]+bestaudio[ext=m4a]/best[ext=mp4][height<=480]/best --merge-output-format mp4"
+          elif [[ "$QUALITY" == *"360p"* ]]; then
+            YTDLP_F="-f bestvideo[ext=mp4][height<=360]+bestaudio[ext=m4a]/best[ext=mp4][height<=360]/best --merge-output-format mp4"
+          elif [[ "$QUALITY" == *"Audio"* ]]; then
+            YTDLP_F="-x --audio-format mp3"
+          else
+            YTDLP_F="--merge-output-format mp4"
+          fi
+
           for URL in $FORMATTED_URLS; do
-            [ -z "$URL" ] && continue
-            echo "========================================="
-            echo "Processing: $URL"
-            echo "========================================="
+            if [ -z "$URL" ]; then continue; fi
             
-            if echo "$URL" | grep -qiE "(youtube\.com|youtu\.be|twitch\.tv|reddit\.com|vimeo|soundcloud|bunkr)"; then
-              # Bunkr هم توسط yt-dlp پشتیبانی می‌شود (البته ممکن است نیاز به بروزرسانی extractor داشته باشد)
-              download_video "$URL" "tmp_downloads" || echo "⚠️ Failed: $URL"
+            echo "==========================================="
+            echo "Processing URL: $URL"
+            echo "==========================================="
+
+            if echo "$URL" | grep -qE "(bunkr\.si|bunkr\.fi|bunkr\.ru|bunkr\.cr|bunkr\.rip|bunkrr\.su)"; then
+              echo "Downloading from Bunkr..."
+              python3 bunkr.py "$URL" "tmp_downloads"
+              
+            elif echo "$URL" | grep -qE "(youtube\.com|youtu\.be|twitch\.tv|reddit\.com|vimeo|soundcloud)"; then
+              echo "Downloading with yt-dlp..."
+              COOKIE_ARG=""
+              [ -s youtube_cookies.txt ] && COOKIE_ARG="--cookies youtube_cookies.txt"
+              
+              yt-dlp --js-runtimes bun:$HOME/.bun/bin/bun $COOKIE_ARG $YTDLP_F -o "tmp_downloads/%(title)s.%(ext)s" "$URL"
+              
             else
-              download_direct "$URL" "tmp_downloads" || echo "⚠️ Failed: $URL"
+              echo "Downloading direct file with aria2..."
+              aria2c --split=2 --max-connection-per-server=2 --dir="tmp_downloads" "$URL"
             fi
           done
-          
-          # بررسی وجود فایل دانلود شده
-          if [ -z "$(ls -A tmp_downloads 2>/dev/null)" ]; then
-            echo "❌ هیچ فایلی دانلود نشد!"
-            exit 1
-          fi
-          
-          # پردازش هر فایل: زیپ با پسورد یا split در صورت نیاز
+
+      - name: Zip & Split
+        shell: bash
+        run: |
+          HAS_PASS="${{ github.event.inputs.password }}"
+
           for FILE in tmp_downloads/*; do
             [ -f "$FILE" ] || continue
             SIZE=$(stat -c%s "$FILE")
             LIMIT=$((95 * 1024 * 1024))
             BASENAME=$(basename "$FILE")
-            BASE_NOEXT="${BASENAME%.*}"
             
-            # گزینه‌های زیپ
-            ZIP_OPTS=""
-            [ -n "$ZIP_PASS" ] && ZIP_OPTS="-P $ZIP_PASS"
+            rm -f "dl/${BASENAME}.zip" "dl/${BASENAME}.z"*
             
-            if [ -n "$ZIP_PASS" ] || [ "$SIZE" -gt "$LIMIT" ]; then
-              echo "🔒 Zipping and splitting (if needed): $BASENAME"
-              ZIP_BASE="final_artifacts/${BASE_NOEXT}"
-              zip $ZIP_OPTS "$ZIP_BASE.zip" -j "$FILE"
+            if [ -n "$HAS_PASS" ] || [ "$SIZE" -gt "$LIMIT" ]; then
+              echo "Zipping/Splitting: $BASENAME"
               
-              if [ "$SIZE" -gt "$LIMIT" ]; then
-                # split کردن فایل زیپ شده به قطعات 95MB
-                mv "$ZIP_BASE.zip" "$ZIP_BASE.full.zip"
-                split -b 95m -d "$ZIP_BASE.full.zip" "$ZIP_BASE.part."
-                rm "$ZIP_BASE.full.zip"
-                # rename قطعات به نام‌های قابل تشخیص
-                for part in "$ZIP_BASE.part."*; do
-                  num="${part##*.part.}"
-                  mv "$part" "final_artifacts/${BASE_NOEXT}.z${num}"
-                done
-                # تولید فایل اطلاعاتی برای بازسازی
-                echo "برای بازسازی فایل اصلی، دستور زیر را اجرا کنید:" > "final_artifacts/${BASE_NOEXT}.README.txt"
-                echo "cat ${BASE_NOEXT}.z* > ${BASE_NOEXT}.zip && unzip ${BASE_NOEXT}.zip (${ZIP_PASS:+-P $ZIP_PASS})" >> "final_artifacts/${BASE_NOEXT}.README.txt"
-              fi
+              PASS_ARG=""
+              [ -n "$HAS_PASS" ] && PASS_ARG="-P $HAS_PASS"
+              
+              zip $PASS_ARG -s 95m "dl/${BASENAME}.zip" -j "$FILE"
+              
+              for ZPART in "dl/${BASENAME}".zip "dl/${BASENAME}".z*; do
+                if [ -f "$ZPART" ]; then
+                  basename "$ZPART" >> new_files.txt
+                fi
+              done
             else
-              echo "📄 کپی فایل بدون زیپ: $BASENAME"
-              cp "$FILE" "final_artifacts/$BASENAME"
+              echo "File is under 95MB. Copying raw file (No Zip)..."
+              cp -f "$FILE" "dl/$BASENAME"
+              echo "$BASENAME" >> new_files.txt
             fi
           done
-          
           rm -rf tmp_downloads
+
+      - name: Update Links.md
+        shell: bash
+        run: |
+          [ ! -f new_files.txt ] && exit 0
           
-          # ایجاد فایل index.html ساده برای نمایش لینک‌ها
-          cd final_artifacts
-          cat > index.html << 'EOF'
-          <html><head><title>Download Links</title></head><body>
-          <h2>Download Artifacts</h2><ul>
-          EOF
-          for f in *; do
-            [ -f "$f" ] && echo "<li><a href='$f'>$f</a></li>" >> index.html
-          done
-          echo "</ul></body></html>" >> index.html
-          cd ..
+          REPO="${{ github.repository }}"
+          BRANCH="${GITHUB_REF_NAME}"
           
-      - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: downloaded-files
-          path: final_artifacts/
-          retention-days: 7
-          compression-level: 0
+          HEADER="## 🔗 Direct Download Links\n> Click on any link below to start downloading directly.<br><br/>\n\n"
+          
+          echo "### 📅 $(TZ='Asia/Tehran' date +'%Y-%m-%d %H:%M') IR" > current_run.md
+          
+          while IFS= read -r FNAME; do
+            ENCODED_NAME=$(python3 -c "import urllib.parse; print(urllib.parse.quote(input()))" <<< "$FNAME")
+            RAW_URL="https://github.com/$REPO/raw/$BRANCH/dl/$ENCODED_NAME"
+            
+            DISPLAY_NAME=$(echo "$FNAME" | sed -E 's/android[0-9]+\+_//g; s/-release//g')
+            
+            # Using env variable and a python one-liner to prevent any YAML/Bash indentation errors
+            export FNAME_ENV="$FNAME"
+            SIZE_STR=$(python3 -c "import os; fname = os.environ.get('FNAME_ENV'); path = f'dl/{fname}'; size = os.path.getsize(path) if os.path.exists(path) else 0; print(f'{size/1048576:.1f}MB' if size >= 1048576 else f'{size//1024}KB')")
+            
+            EXT="${FNAME##*.}"
+            case "$EXT" in
+              apk)             ICON="📱" ;;
+              mp4|mkv|avi|mov) ICON="🎬" ;;
+              mp3|m4a|flac|ogg) ICON="🎵" ;;
+              zip|z[0-9]*)     ICON="🗜️" ;;
+              *)               ICON="📥" ;;
+            esac
+            
+            echo "- $ICON [$DISPLAY_NAME]($RAW_URL) \`$SIZE_STR\`" >> current_run.md
+            echo "" >> current_run.md
+          done < new_files.txt
+          
+          echo "---" >> current_run.md
+          echo "" >> current_run.md
+          
+          if [ -f Links.md ]; then
+            tail -n +4 Links.md > old_links.md 2>/dev/null || touch old_links.md
+            echo -e "$HEADER" > Links.md
+            cat current_run.md old_links.md >> Links.md
+            rm old_links.md
+          else
+            echo -e "$HEADER" > Links.md
+            cat current_run.md >> Links.md
+          fi
+          
+          rm -f new_files.txt current_run.md
+
+      - name: Push to Repository
+        run: |
+          BRANCH="${GITHUB_REF_NAME}"
+          git config user.name "NET-Sentinel Bot"
+          git config user.email "224584266+NetSentinel-Bot@users.noreply.github.com"
+          git add dl/ Links.md
+          git commit -m "Add downloaded files via Panel [skip ci]" || echo "Nothing to commit"
+          git push origin HEAD:$BRANCH
