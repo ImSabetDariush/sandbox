@@ -2,6 +2,12 @@
 > Click on any link below to start downloading directly.<br><br/>
 
 
+### 📅 2026-04-30 17:07 IR
+- 🎬 [My Honest Thoughts about Deepseek.mp4](https://github.com/ImSabetDariush/sandbox/raw/main/dl/My%20Honest%20Thoughts%20about%20Deepseek.mp4) `33.2MB`
+
+---
+
+
 ### 📅 2026-04-29 14:38 IR
 - 🎬 [This ESP32 Looks Like a Pocket Watch… and It’s Beautiful ｜ Waveshare ESP32-S3 1.75＂.mp4](https://github.com/ImSabetDariush/sandbox/raw/main/dl/This%20ESP32%20Looks%20Like%20a%20Pocket%20Watch%E2%80%A6%20and%20It%E2%80%99s%20Beautiful%20%EF%BD%9C%20Waveshare%20ESP32-S3%201.75%EF%BC%82.mp4) `22.6MB`
 
