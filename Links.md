@@ -2,6 +2,12 @@
 > Click on any link below to start downloading directly.<br><br/>
 
 
+### 📅 2026-05-01 02:51 IR
+- 🎬 [Gemma 4 Small Models Are INSANE – E2B & E4B Hands-On Testing!.mp4](https://github.com/ImSabetDariush/sandbox/raw/main/dl/Gemma%204%20Small%20Models%20Are%20INSANE%20%E2%80%93%20E2B%20%26%20E4B%20Hands-On%20Testing%21.mp4) `47.4MB`
+
+---
+
+
 ### 📅 2026-04-30 23:09 IR
 - 🎬 [Local AI just leveled up... Llama.cpp vs Ollama.mp4](https://github.com/ImSabetDariush/sandbox/raw/main/dl/Local%20AI%20just%20leveled%20up...%20Llama.cpp%20vs%20Ollama.mp4) `39.2MB`
 
