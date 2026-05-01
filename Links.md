@@ -2,6 +2,12 @@
 > Click on any link below to start downloading directly.<br><br/>
 
 
+### 📅 2026-05-01 03:34 IR
+- 📥 [fedora.gpg](https://github.com/ImSabetDariush/sandbox/raw/main/dl/fedora.gpg) `4KB`
+
+---
+
+
 ### 📅 2026-05-01 03:16 IR
 - 🗜️ [Local Gemma 4 with OpenCode & llama.cpp ｜ Build a Local RAG with LangChain ｜ 🔴 Live.mp4.zip](https://github.com/ImSabetDariush/sandbox/raw/main/dl/Local%20Gemma%204%20with%20OpenCode%20%26%20llama.cpp%20%EF%BD%9C%20Build%20a%20Local%20RAG%20with%20LangChain%20%EF%BD%9C%20%F0%9F%94%B4%20Live.mp4.zip) `2.0MB`
 
