@@ -2,6 +2,14 @@
 > Click on any link below to start downloading directly.<br><br/>
 
 
+### 📅 2026-05-01 04:33 IR
+- 🗜️ [Gemma 4 with Pi Coding Agent & llama.cpp ｜ Build LLM Resource Calculator with NextJS ｜ 🔴 Live.mp4.zip](https://github.com/ImSabetDariush/sandbox/raw/main/dl/Gemma%204%20with%20Pi%20Coding%20Agent%20%26%20llama.cpp%20%EF%BD%9C%20Build%20LLM%20Resource%20Calculator%20with%20NextJS%20%EF%BD%9C%20%F0%9F%94%B4%20Live.mp4.zip) `91.8MB`
+
+- 🗜️ [Gemma 4 with Pi Coding Agent & llama.cpp ｜ Build LLM Resource Calculator with NextJS ｜ 🔴 Live.mp4.zip](https://github.com/ImSabetDariush/sandbox/raw/main/dl/Gemma%204%20with%20Pi%20Coding%20Agent%20%26%20llama.cpp%20%EF%BD%9C%20Build%20LLM%20Resource%20Calculator%20with%20NextJS%20%EF%BD%9C%20%F0%9F%94%B4%20Live.mp4.zip) `91.8MB`
+
+---
+
+
 ### 📅 2026-05-01 03:34 IR
 - 📥 [fedora.gpg](https://github.com/ImSabetDariush/sandbox/raw/main/dl/fedora.gpg) `4KB`
 
