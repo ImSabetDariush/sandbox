@@ -151,38 +151,48 @@ jobs:
             fi
           done
 
-      - name: Zip & Split
+      - name: Compress & Split
         shell: bash
         run: |
+          set -euo pipefail
+
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends p7zip-full
+
           HAS_PASS="${{ github.event.inputs.password }}"
+          LIMIT=$((95 * 1024 * 1024))
+
+          : > new_files.txt
+          mkdir -p dl
 
           for FILE in tmp_downloads/*; do
             [ -f "$FILE" ] || continue
+
             SIZE=$(stat -c%s "$FILE")
-            LIMIT=$((95 * 1024 * 1024))
             BASENAME=$(basename "$FILE")
-            
-            rm -f "dl/${BASENAME}.zip" "dl/${BASENAME}.z"*
-            
-            if [ -n "$HAS_PASS" ] || [ "$SIZE" -gt "$LIMIT" ]; then
-              echo "Zipping/Splitting: $BASENAME"
-              
-              PASS_ARG=""
-              [ -n "$HAS_PASS" ] && PASS_ARG="-P $HAS_PASS"
-              
-              zip $PASS_ARG -s 95m "dl/${BASENAME}.zip" -j "$FILE"
-              
-              for ZPART in "dl/${BASENAME}".zip "dl/${BASENAME}".z*; do
-                if [ -f "$ZPART" ]; then
-                  basename "$ZPART" >> new_files.txt
-                fi
+
+            rm -f "dl/${BASENAME}" "dl/${BASENAME}.7z" "dl/${BASENAME}.7z".*
+
+            if [ "$SIZE" -gt "$LIMIT" ] || [ -n "$HAS_PASS" ]; then
+              echo "Compressing/Splitting with 7z: $BASENAME"
+
+              if [ -n "$HAS_PASS" ]; then
+                7z a -t7z -mx=0 -mhe=on -p"$HAS_PASS" -v95m "dl/${BASENAME}.7z" "$FILE"
+              else
+                7z a -t7z -mx=0 -v95m "dl/${BASENAME}.7z" "$FILE"
+              fi
+
+              for PART in "dl/${BASENAME}.7z".*; do
+                [ -f "$PART" ] || continue
+                basename "$PART" >> new_files.txt
               done
             else
-              echo "File is under 95MB. Copying raw file (No Zip)..."
+              echo "File is under 95MB. Copying raw file..."
               cp -f "$FILE" "dl/$BASENAME"
               echo "$BASENAME" >> new_files.txt
             fi
           done
+
           rm -rf tmp_downloads
 
       - name: Update Links.md
@@ -203,7 +213,6 @@ jobs:
             
             DISPLAY_NAME=$(echo "$FNAME" | sed -E 's/android[0-9]+\+_//g; s/-release//g')
             
-            # Using env variable and a python one-liner to prevent any YAML/Bash indentation errors
             export FNAME_ENV="$FNAME"
             SIZE_STR=$(python3 -c "import os; fname = os.environ.get('FNAME_ENV'); path = f'dl/{fname}'; size = os.path.getsize(path) if os.path.exists(path) else 0; print(f'{size/1048576:.1f}MB' if size >= 1048576 else f'{size//1024}KB')")
             
@@ -212,7 +221,7 @@ jobs:
               apk)             ICON="📱" ;;
               mp4|mkv|avi|mov) ICON="🎬" ;;
               mp3|m4a|flac|ogg) ICON="🎵" ;;
-              zip|z[0-9]*)     ICON="🗜️" ;;
+              zip|z[0-9]*|7z|001|002|003|004|005|006|007|008|009) ICON="🗜️" ;;
               *)               ICON="📥" ;;
             esac
             
