@@ -75,7 +75,7 @@ jobs:
             touch youtube_cookies.txt
           fi
 
-      # ---------- Rewritten Bunkr script (robust) ----------
+      # ---------- Bunkr download script ----------
       - name: Setup Bunkr Script
         run: |
           cat << 'EOF' > bunkr.py
@@ -84,18 +84,13 @@ jobs:
           from itertools import cycle
           from urllib.parse import urlparse
 
-          # All known Bunkr domains
           BUNKRR_DOMAINS = ("bunkr.si", "bunkr.fi", "bunkr.ru", "bunkr.cr", "bunkr.rip", "bunkrr.su")
-          # We'll try different API endpoints
           API_ENDPOINTS = [
               "https://bunkr.cr/api/vs",
               "https://bunkrr.su/api/vs",
               "https://bunkr.fi/api/vs"
           ]
           HEADERS = {"User-Agent": "Mozilla/5.0", "Referer": "https://get.bunkrr.su/"}
-
-          def is_bunkr_url(url):
-              return any(dom in url for dom in BUNKRR_DOMAINS)
 
           def get_slug(url):
               import re
@@ -139,11 +134,9 @@ jobs:
                   print("ERROR: Failed to decrypt download link")
                   sys.exit(1)
 
-              # Get filename from URL
               fname = urlparse(dl_link).path.rstrip("/").split("/")[-1]
               filepath = os.path.join(outdir, fname)
 
-              # Download with stream
               resp = requests.get(dl_link, headers=HEADERS, stream=True, timeout=30)
               resp.raise_for_status()
               with open(filepath, "wb") as f:
@@ -153,7 +146,7 @@ jobs:
               print(f"Downloaded: {fname}")
           EOF
 
-      # ---------- Download all URLs (with parallel processing) ----------
+      # ---------- Download all URLs (parallel) ----------
       - name: Download Files
         shell: bash
         run: |
@@ -162,8 +155,7 @@ jobs:
           RAW_URLS="${{ github.event.inputs.url }}"
           QUALITY="${{ github.event.inputs.quality }}"
 
-          # Convert URLs to array, handle spaces inside URLs if any (use null delimiter)
-          # First: split by comma, space or newline, then filter empty
+          # Convert input to array (handle spaces, commas, newlines)
           IFS=$'\n' read -d '' -ra URL_ARRAY < <(echo "$RAW_URLS" | tr ',' '\n' | tr ' ' '\n' | sed '/^$/d')
 
           if [ ${#URL_ARRAY[@]} -eq 0 ]; then
@@ -196,20 +188,17 @@ jobs:
           COOKIE_ARG=""
           [ -s youtube_cookies.txt ] && COOKIE_ARG="--cookies youtube_cookies.txt"
 
-          # Function to download a single URL
+          # Download function (uses grep to detect Bunkr)
           download_one() {
             local url="$1"
             echo "==========================================="
             echo "Processing: $url"
             echo "==========================================="
 
-            if python3 -c "
-import sys
-from bunkr import is_bunkr_url
-sys.exit(0 if is_bunkr_url(sys.argv[1]) else 1)" "$url"; then
+            if echo "$url" | grep -qE "(bunkr\.si|bunkr\.fi|bunkr\.ru|bunkr\.cr|bunkr\.rip|bunkrr\.su)"; then
               echo "Downloading from Bunkr..."
               python3 bunkr.py "$url" "tmp_downloads" || echo "Bunkr download failed for $url"
-            elif [[ "$url" =~ (youtube\.com|youtu\.be|twitch\.tv|reddit\.com|vimeo|soundcloud) ]]; then
+            elif echo "$url" | grep -qE "(youtube\.com|youtu\.be|twitch\.tv|reddit\.com|vimeo|soundcloud)"; then
               echo "Downloading with yt-dlp..."
               yt-dlp --js-runtimes bun --user-agent "Mozilla/5.0" $COOKIE_ARG $YTDLP_F -o "tmp_downloads/%(title)s.%(ext)s" "$url" || echo "yt-dlp download failed for $url"
             else
@@ -219,9 +208,9 @@ sys.exit(0 if is_bunkr_url(sys.argv[1]) else 1)" "$url"; then
           }
 
           export -f download_one
-          # Run downloads in parallel (up to 3 at a time)
+          # Run up to 3 downloads in parallel
           printf "%s\n" "${URL_ARRAY[@]}" | xargs -P 3 -I {} bash -c 'download_one "$@"' _ {}
-          
+
           echo "All downloads completed."
 
       # ---------- Compress & Split ----------
@@ -231,28 +220,24 @@ sys.exit(0 if is_bunkr_url(sys.argv[1]) else 1)" "$url"; then
           set -euo pipefail
 
           HAS_PASS="${{ github.event.inputs.password }}"
-          LIMIT=$((90 * 1024 * 1024))   # 90MB to stay safely under GitHub's 100MB limit
+          LIMIT=$((90 * 1024 * 1024))   # safe margin
 
           : > new_files.txt
           mkdir -p dl
 
-          # Use find to avoid glob issues with special characters
           find tmp_downloads -type f -print0 | while IFS= read -r -d '' FILE; do
             SIZE=$(stat -c%s "$FILE")
             BASENAME=$(basename "$FILE")
 
-            # Remove any previous version in dl/
             rm -f "dl/${BASENAME}" "dl/${BASENAME}.7z" "dl/${BASENAME}.7z".*
 
             if [ "$SIZE" -gt "$LIMIT" ] || [ -n "$HAS_PASS" ]; then
               echo "Compressing/Splitting: $BASENAME (size: $SIZE)"
               if [ -n "$HAS_PASS" ]; then
-                # Password provided → also encrypt header
                 7z a -t7z -mx=0 -mhe=on -p"$HAS_PASS" -v90m "dl/${BASENAME}.7z" "$FILE" > /dev/null
               else
                 7z a -t7z -mx=0 -v90m "dl/${BASENAME}.7z" "$FILE" > /dev/null
               fi
-              # List the parts
               for part in "dl/${BASENAME}.7z".*; do
                 [ -f "$part" ] && echo "$(basename "$part")" >> new_files.txt
               done
@@ -275,21 +260,18 @@ sys.exit(0 if is_bunkr_url(sys.argv[1]) else 1)" "$url"; then
           REPO="${{ github.repository }}"
           BRANCH="${GITHUB_REF_NAME}"
 
-          # Header
           echo "## 🔗 Direct Download Links" > Links.md
           echo "> Click on any link to start downloading directly." >> Links.md
           echo "" >> Links.md
 
-          # Timestamp
           echo "### 📅 $(TZ='Asia/Tehran' date +'%Y-%m-%d %H:%M') IR" >> Links.md
           echo "" >> Links.md
 
           while IFS= read -r FNAME; do
-            # URL encode via printf (for spaces, non-ascii)
+            # URL encode using printf (safe)
             ENCODED=$(printf '%s' "$FNAME" | jq -sRr @uri)
             RAW_URL="https://github.com/$REPO/raw/$BRANCH/dl/$ENCODED"
 
-            # Get size using stat (much faster than Python)
             SIZE_BYTES=$(stat -c%s "dl/$FNAME" 2>/dev/null || echo 0)
             if [ "$SIZE_BYTES" -ge 1048576 ]; then
               SIZE_STR="$(echo "scale=1; $SIZE_BYTES/1048576" | bc)MB"
@@ -297,7 +279,6 @@ sys.exit(0 if is_bunkr_url(sys.argv[1]) else 1)" "$url"; then
               SIZE_STR="$((SIZE_BYTES/1024))KB"
             fi
 
-            # Choose icon based on extension
             EXT="${FNAME##*.}"
             case "$EXT" in
               apk)             ICON="📱" ;;
@@ -318,7 +299,6 @@ sys.exit(0 if is_bunkr_url(sys.argv[1]) else 1)" "$url"; then
           BRANCH="${GITHUB_REF_NAME}"
           git config user.name "0x00 Download Bot"
           git config user.email "bot@example.com"
-          # Only push if there are new files
           if [ -n "$(find dl/ -type f -newer .git -print -quit)" ] || [ -f Links.md ]; then
             git add dl/ Links.md
             git commit -m "Add downloaded files via Panel [skip ci]" || echo "Nothing new to commit"
