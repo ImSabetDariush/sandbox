@@ -2,6 +2,20 @@
 > Click on any link below to start downloading directly.<br><br/>
 
 
+### 📅 2026-05-02 04:28 IR
+- 🗜️ [KiCad 9 Hardware Design Tutorial (TI MSPM0) (2⧸2 PCB) - Phil's Lab #166.mp4.7z.001](https://github.com/ImSabetDariush/sandbox/raw/main/dl/KiCad%209%20Hardware%20Design%20Tutorial%20%28TI%20MSPM0%29%20%282%E2%A7%B82%20PCB%29%20-%20Phil%27s%20Lab%20%23166.mp4.7z.001) `95.0MB`
+
+- 🗜️ [KiCad 9 Hardware Design Tutorial (TI MSPM0) (2⧸2 PCB) - Phil's Lab #166.mp4.7z.002](https://github.com/ImSabetDariush/sandbox/raw/main/dl/KiCad%209%20Hardware%20Design%20Tutorial%20%28TI%20MSPM0%29%20%282%E2%A7%B82%20PCB%29%20-%20Phil%27s%20Lab%20%23166.mp4.7z.002) `95.0MB`
+
+- 🗜️ [KiCad 9 Hardware Design Tutorial (TI MSPM0) (2⧸2 PCB) - Phil's Lab #166.mp4.7z.003](https://github.com/ImSabetDariush/sandbox/raw/main/dl/KiCad%209%20Hardware%20Design%20Tutorial%20%28TI%20MSPM0%29%20%282%E2%A7%B82%20PCB%29%20-%20Phil%27s%20Lab%20%23166.mp4.7z.003) `95.0MB`
+
+- 🗜️ [KiCad 9 Hardware Design Tutorial (TI MSPM0) (2⧸2 PCB) - Phil's Lab #166.mp4.7z.004](https://github.com/ImSabetDariush/sandbox/raw/main/dl/KiCad%209%20Hardware%20Design%20Tutorial%20%28TI%20MSPM0%29%20%282%E2%A7%B82%20PCB%29%20-%20Phil%27s%20Lab%20%23166.mp4.7z.004) `95.0MB`
+
+- 🗜️ [KiCad 9 Hardware Design Tutorial (TI MSPM0) (2⧸2 PCB) - Phil's Lab #166.mp4.7z.005](https://github.com/ImSabetDariush/sandbox/raw/main/dl/KiCad%209%20Hardware%20Design%20Tutorial%20%28TI%20MSPM0%29%20%282%E2%A7%B82%20PCB%29%20-%20Phil%27s%20Lab%20%23166.mp4.7z.005) `75.8MB`
+
+---
+
+
 ### 📅 2026-05-02 00:43 IR
 - 🎬 [Why Game Optimization Degrades - And Who's to Blame？.mp4](https://github.com/ImSabetDariush/sandbox/raw/main/dl/Why%20Game%20Optimization%20Degrades%20-%20And%20Who%27s%20to%20Blame%EF%BC%9F.mp4) `40.2MB`
 
