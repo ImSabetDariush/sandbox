@@ -2,6 +2,14 @@
 > Click on any link below to start downloading directly.<br><br/>
 
 
+### 📅 2026-05-02 05:04 IR
+- 🗜️ [FIRST RIDE Review of the GWM Tank 300.mp4.7z.001](https://github.com/ImSabetDariush/sandbox/raw/main/dl/FIRST%20RIDE%20Review%20of%20the%20GWM%20Tank%20300.mp4.7z.001) `95.0MB`
+
+- 🗜️ [FIRST RIDE Review of the GWM Tank 300.mp4.7z.002](https://github.com/ImSabetDariush/sandbox/raw/main/dl/FIRST%20RIDE%20Review%20of%20the%20GWM%20Tank%20300.mp4.7z.002) `82.0MB`
+
+---
+
+
 ### 📅 2026-05-02 04:58 IR
 - 🗜️ [2025 GWM Tank 300 2.4 diesel： Detailed review – 0-100 & POV test drive.mp4.7z.001](https://github.com/ImSabetDariush/sandbox/raw/main/dl/2025%20GWM%20Tank%20300%202.4%20diesel%EF%BC%9A%20Detailed%20review%20%E2%80%93%C2%A00-100%20%26%20POV%20test%20drive.mp4.7z.001) `95.0MB`
 
