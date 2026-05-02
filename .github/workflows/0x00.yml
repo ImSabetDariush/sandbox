@@ -146,7 +146,7 @@ jobs:
               print(f"Downloaded: {fname}")
           EOF
 
-      # ---------- Download all URLs (parallel) ----------
+      # ---------- Download Files (parallel) ----------
       - name: Download Files
         shell: bash
         run: |
@@ -155,8 +155,8 @@ jobs:
           RAW_URLS="${{ github.event.inputs.url }}"
           QUALITY="${{ github.event.inputs.quality }}"
 
-          # Convert input to array (handle spaces, commas, newlines)
-          IFS=$'\n' read -d '' -ra URL_ARRAY < <(echo "$RAW_URLS" | tr ',' '\n' | tr ' ' '\n' | sed '/^$/d')
+          # Convert input to array (handle spaces, commas, newlines) - FIXED
+          readarray -t URL_ARRAY <<< "$(echo "$RAW_URLS" | tr ',' '\n' | tr ' ' '\n' | sed '/^$/d')"
 
           if [ ${#URL_ARRAY[@]} -eq 0 ]; then
             echo "No URLs provided. Exiting."
