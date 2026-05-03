@@ -63,9 +63,9 @@ jobs:
       # ابزارهای apt فقط در صورت نیاز (بدون آپدیت اضافه)
       - name: Install apt tools only if missing
         run: |
-          if ! command -v aria2c &>/dev/null || ! command -v 7z &>/dev/null; then
+          if ! command -v 7z &>/dev/null; then
             sudo apt-get update -qq
-            sudo apt-get install -y --no-install-recommends aria2 p7zip-full
+            sudo apt-get install -y --no-install-recommends p7zip-full
           fi
           # ffmpeg معمولاً روی رانر هست، اگر نبود نصب کن
           if ! command -v ffmpeg &>/dev/null; then
@@ -153,8 +153,8 @@ jobs:
             YTDLP_F="--merge-output-format mp4"
           fi
 
-          # دانلودر سریع با aria2c و دانلود همزمان قطعات
-          YTDLP_FAST=(--downloader aria2c --downloader-args "aria2c:-x 16 -s 16 -j 16 -k 1M --file-allocation=none --summary-interval=15" --concurrent-fragments 16)
+          # دانلود با دانلودر داخلی yt-dlp؛ aria2c برای یوتیوب گاهی روی GitHub Actions کندتر می‌شود
+          YTDLP_FAST=(--concurrent-fragments 8)
 
           for URL in $FORMATTED_URLS; do
             if [ -z "$URL" ]; then continue; fi
@@ -176,9 +176,9 @@ jobs:
               yt-dlp --js-runtimes bun:bun "${COOKIE_ARG[@]}" "${YTDLP_FAST[@]}" $YTDLP_F -o "tmp_downloads/%(title)s.%(ext)s" "$URL"
               
             else
-              echo "Downloading direct file with aria2..."
-              # افزایش split برای سرعت بیشتر
-              aria2c --split=16 --max-connection-per-server=16 --min-split-size=1M --file-allocation=none --dir="tmp_downloads" "$URL"
+              echo "Downloading direct file with curl..."
+              FNAME=$(python3 -c "import os, sys, urllib.parse; p=urllib.parse.urlparse(sys.argv[1]).path; print(os.path.basename(urllib.parse.unquote(p)) or 'download')" "$URL")
+              curl -L --fail --retry 3 --connect-timeout 30 -o "tmp_downloads/$FNAME" "$URL"
             fi
           done
 
