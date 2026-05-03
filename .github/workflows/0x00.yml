@@ -154,7 +154,7 @@ jobs:
           fi
 
           # دانلودر سریع با aria2c و دانلود همزمان قطعات
-          YTDLP_FAST="--downloader aria2c --downloader-args 'aria2c:-x 4 -s 4 -j 4' --concurrent-fragments 4"
+          YTDLP_FAST=(--downloader aria2c --downloader-args "aria2c:-x 4 -s 4 -j 4" --concurrent-fragments 4)
 
           for URL in $FORMATTED_URLS; do
             if [ -z "$URL" ]; then continue; fi
@@ -169,11 +169,11 @@ jobs:
               
             elif echo "$URL" | grep -qE "(youtube\.com|youtu\.be|twitch\.tv|reddit\.com|vimeo|soundcloud)"; then
               echo "Downloading with yt-dlp..."
-              COOKIE_ARG=""
-              [ -s youtube_cookies.txt ] && COOKIE_ARG="--cookies youtube_cookies.txt"
+              COOKIE_ARG=()
+              [ -s youtube_cookies.txt ] && COOKIE_ARG=(--cookies youtube_cookies.txt)
               
               # bun در PATH است، مسیر قبلی لازم نیست
-              yt-dlp --js-runtimes bun:bun $COOKIE_ARG $YTDLP_FAST $YTDLP_F -o "tmp_downloads/%(title)s.%(ext)s" "$URL"
+              yt-dlp --js-runtimes bun:bun "${COOKIE_ARG[@]}" "${YTDLP_FAST[@]}" $YTDLP_F -o "tmp_downloads/%(title)s.%(ext)s" "$URL"
               
             else
               echo "Downloading direct file with aria2..."
