@@ -36,13 +36,13 @@ jobs:
         with:
           fetch-depth: 1
 
-      # نصب bun با کش اتوماتیک (خیلی سریع‌تر از curl)
+      # نصب bun با کش خودکار (سریع)
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
         with:
           bun-version: latest
 
-      # کش هوشمند yt-dlp با کلید بر اساس آخرین نسخه
+      # کش yt-dlp
       - name: Get latest yt-dlp version tag
         id: ytdlp_version
         run: echo "tag=$(curl -sL https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest | jq -r .tag_name)" >> $GITHUB_OUTPUT
@@ -60,19 +60,22 @@ jobs:
           sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
           sudo chmod a+rx /usr/local/bin/yt-dlp
 
-      # ابزارهای apt فقط در صورت نیاز (بدون آپدیت اضافه)
+      # ابزارهای apt فقط در صورت نیاز
       - name: Install apt tools only if missing
         run: |
-          if ! command -v 7z &>/dev/null; then
+          if ! command -v aria2c &>/dev/null || ! command -v 7z &>/dev/null; then
             sudo apt-get update -qq
-            sudo apt-get install -y --no-install-recommends p7zip-full
+            sudo apt-get install -y --no-install-recommends aria2 p7zip-full
           fi
-          # ffmpeg معمولاً روی رانر هست، اگر نبود نصب کن
           if ! command -v ffmpeg &>/dev/null; then
             sudo apt-get install -y --no-install-recommends ffmpeg
           fi
 
-      - name: Setup YouTube Cookies 
+      # نصب پکیج‌های پایتون برای اسکرپر Pornhub
+      - name: Install Python dependencies
+        run: pip install --quiet requests beautifulsoup4
+
+      - name: Setup YouTube Cookies
         env:
           YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
         run: |
@@ -153,32 +156,81 @@ jobs:
             YTDLP_F="--merge-output-format mp4"
           fi
 
-          # دانلود با دانلودر داخلی yt-dlp؛ aria2c برای یوتیوب گاهی روی GitHub Actions کندتر می‌شود
-          YTDLP_FAST=(--concurrent-fragments 8)
+          # (نقل‌قول‌های داخلی تصحیح شد) دانلودر سریع
+          YTDLP_FAST="--downloader aria2c --downloader-args \"aria2c:-x 4 -s 4 -j 4\" --concurrent-fragments 4"
 
           for URL in $FORMATTED_URLS; do
-            if [ -z "$URL" ]; then continue; fi
-            
+            [ -z "$URL" ] && continue
             echo "==========================================="
             echo "Processing URL: $URL"
             echo "==========================================="
 
-            if echo "$URL" | grep -qE "(bunkr\.si|bunkr\.fi|bunkr\.ru|bunkr\.cr|bunkr\.rip|bunkrr\.su)"; then
+            # ---- Pornhub Model / Creator Page ----
+            if echo "$URL" | grep -qE "pornhub\.(com|org|net)/(model|pornstar)/"; then
+              echo "Scraping Pornhub model page: $URL"
+              # اسکریپت داخلی برای جمع‌آوری همه لینک‌های ویدئو از صفحات مدل
+              python3 << 'PYEOF' "$URL" > ph_videos.txt
+import sys, requests, time, re
+from bs4 import BeautifulSoup
+
+model_url = sys.argv[1].rstrip('/')
+video_urls = []
+page = 1
+
+while True:
+    page_url = f"{model_url}?page={page}"
+    try:
+        resp = requests.get(page_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, 'html.parser')
+    except:
+        break
+
+    found = False
+    for a in soup.find_all('a', href=True):
+        href = a['href']
+        if '/view_video.php?viewkey=' in href:
+            full = f"https://www.pornhub.com{href}" if not href.startswith('http') else href
+            video_urls.append(full)
+            found = True
+
+    if not found:
+        break
+    page += 1
+    time.sleep(1)   # محدودیت نرخ
+
+for url in video_urls:
+    print(url)
+PYEOF
+
+              if [ -s ph_videos.txt ]; then
+                echo "Found $(wc -l < ph_videos.txt) videos. Starting download..."
+                # دانلود دسته‌ای با yt-dlp (batch-file)
+                COOKIE_ARG=""
+                [ -s youtube_cookies.txt ] && COOKIE_ARG="--cookies youtube_cookies.txt"
+                yt-dlp --js-runtimes bun:bun $COOKIE_ARG $YTDLP_FAST $YTDLP_F \
+                  -o "tmp_downloads/%(title)s.%(ext)s" --batch-file ph_videos.txt
+              else
+                echo "No videos found on this model page."
+              fi
+              rm -f ph_videos.txt
+
+            # ---- Bunkr ----
+            elif echo "$URL" | grep -qE "(bunkr\.si|bunkr\.fi|bunkr\.ru|bunkr\.cr|bunkr\.rip|bunkrr\.su)"; then
               echo "Downloading from Bunkr..."
               python3 bunkr.py "$URL" "tmp_downloads"
-              
+
+            # ---- YouTube / Twitch / supported streaming ----
             elif echo "$URL" | grep -qE "(youtube\.com|youtu\.be|twitch\.tv|reddit\.com|vimeo|soundcloud)"; then
               echo "Downloading with yt-dlp..."
-              COOKIE_ARG=()
-              [ -s youtube_cookies.txt ] && COOKIE_ARG=(--cookies youtube_cookies.txt)
-              
-              # bun در PATH است، مسیر قبلی لازم نیست
-              yt-dlp --js-runtimes bun:bun "${COOKIE_ARG[@]}" "${YTDLP_FAST[@]}" $YTDLP_F -o "tmp_downloads/%(title)s.%(ext)s" "$URL"
-              
+              COOKIE_ARG=""
+              [ -s youtube_cookies.txt ] && COOKIE_ARG="--cookies youtube_cookies.txt"
+              yt-dlp --js-runtimes bun:bun $COOKIE_ARG $YTDLP_FAST $YTDLP_F -o "tmp_downloads/%(title)s.%(ext)s" "$URL"
+
+            # ---- لینک مستقیم / ناشناخته ----
             else
-              echo "Downloading direct file with curl..."
-              FNAME=$(python3 -c "import os, sys, urllib.parse; p=urllib.parse.urlparse(sys.argv[1]).path; print(os.path.basename(urllib.parse.unquote(p)) or 'download')" "$URL")
-              curl -L --fail --retry 3 --connect-timeout 30 -o "tmp_downloads/$FNAME" "$URL"
+              echo "Downloading direct file with aria2..."
+              aria2c --split=4 --max-connection-per-server=4 --dir="tmp_downloads" "$URL"
             fi
           done
 
