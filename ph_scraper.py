@@ -27,6 +27,6 @@ if __name__ == "__main__":
             break
         all_urls.extend(urls)
         page += 1
-        time.sleep(1)   # رعایت نرخ درخواست
+        time.sleep(1)
     for url in all_urls:
         print(url)
