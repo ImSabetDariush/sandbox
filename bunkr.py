@@ -44,7 +44,7 @@ if __name__ == "__main__":
     dl_link = decrypt(api_resp) if api_resp else None
     if dl_link:
         filepath = os.path.join(outdir, urlparse(dl_link).path.rstrip("/").split("/")[-1])
-        resp = requests.get(dl_link, headers=BUNKRR_DOWNLOAD_HEADERS, stream=True)
+        resp = requests.get(, headers=BUNKRR_DOWNLOAD_HEADERS, stream=True)
         with open(filepath, "wb") as f:
             for chunk in resp.iter_content(8192):
                 if chunk:
