@@ -97,17 +97,20 @@ jobs:
           rm -rf tmp_downloads
           mkdir -p tmp_downloads dl
 
-          # انتخاب کیفیت (پارامترهای yt-dlp)
+          # انتخاب کیفیت به صورت یک آرایه Bash
           case "$QUALITY" in
-            *720p*)   YTDLP_F="-f bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4][height<=720]/best --merge-output-format mp4" ;;
-            *480p*)   YTDLP_F="-f bestvideo[ext=mp4][height<=480]+bestaudio[ext=m4a]/best[ext=mp4][height<=480]/best --merge-output-format mp4" ;;
-            *360p*)   YTDLP_F="-f bestvideo[ext=mp4][height<=360]+bestaudio[ext=m4a]/best[ext=mp4][height<=360]/best --merge-output-format mp4" ;;
-            *Audio*)  YTDLP_F="-x --audio-format mp3" ;;
-            *)        YTDLP_F="--merge-output-format mp4" ;;
+            *720p*)   YTDLP_F=(-f "bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4][height<=720]/best" --merge-output-format mp4) ;;
+            *480p*)   YTDLP_F=(-f "bestvideo[ext=mp4][height<=480]+bestaudio[ext=m4a]/best[ext=mp4][height<=480]/best" --merge-output-format mp4) ;;
+            *360p*)   YTDLP_F=(-f "bestvideo[ext=mp4][height<=360]+bestaudio[ext=m4a]/best[ext=mp4][height<=360]/best" --merge-output-format mp4) ;;
+            *Audio*)  YTDLP_F=(-x --audio-format mp3) ;;
+            *)        YTDLP_F=(--merge-output-format mp4) ;;
           esac
 
-          # تنظیمات سرعت بالای دانلود
-          YTDLP_FAST='--downloader aria2c --downloader-args "aria2c:-x 4 -s 4 -j 4" --concurrent-fragments 4'
+          # آرایه برای کوکی (در صورت وجود)
+          COOKIE_ARG=()
+          if [ -s youtube_cookies.txt ]; then
+            COOKIE_ARG=(--cookies youtube_cookies.txt)
+          fi
 
           for URL in $FORMATTED_URLS; do
             [ -z "$URL" ] && continue
@@ -122,10 +125,14 @@ jobs:
 
               if [ -s ph_videos.txt ]; then
                 echo "Found $(wc -l < ph_videos.txt) videos. Starting download..."
-                COOKIE_ARG=""
-                [ -s youtube_cookies.txt ] && COOKIE_ARG="--cookies youtube_cookies.txt"
-                yt-dlp --js-runtimes bun:bun $COOKIE_ARG $YTDLP_FAST $YTDLP_F \
-                  -o "tmp_downloads/%(title)s.%(ext)s" --batch-file ph_videos.txt
+                yt-dlp --js-runtimes bun:bun \
+                  "${COOKIE_ARG[@]}" \
+                  --downloader aria2c \
+                  --downloader-args "aria2c:-x 4 -s 4 -j 4" \
+                  --concurrent-fragments 4 \
+                  "${YTDLP_F[@]}" \
+                  -o "tmp_downloads/%(title)s.%(ext)s" \
+                  --batch-file ph_videos.txt
               else
                 echo "No videos found on this model page."
               fi
@@ -139,9 +146,14 @@ jobs:
             # ---- YouTube / Twitch / سرویس‌های پشتیبانی‌شده ----
             elif echo "$URL" | grep -qE "(youtube\.com|youtu\.be|twitch\.tv|reddit\.com|vimeo|soundcloud)"; then
               echo "Downloading with yt-dlp..."
-              COOKIE_ARG=""
-              [ -s youtube_cookies.txt ] && COOKIE_ARG="--cookies youtube_cookies.txt"
-              yt-dlp --js-runtimes bun:bun $COOKIE_ARG $YTDLP_FAST $YTDLP_F -o "tmp_downloads/%(title)s.%(ext)s" "$URL"
+              yt-dlp --js-runtimes bun:bun \
+                "${COOKIE_ARG[@]}" \
+                --downloader aria2c \
+                --downloader-args "aria2c:-x 4 -s 4 -j 4" \
+                --concurrent-fragments 4 \
+                "${YTDLP_F[@]}" \
+                -o "tmp_downloads/%(title)s.%(ext)s" \
+                "$URL"
 
             # ---- لینک مستقیم / ناشناخته ----
             else
