@@ -30,22 +30,28 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     permissions:
       contents: write
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      # نصب bun با کش خودکار (سریع)
+      - name: Install prerequisites (jq, aria2, ffmpeg, 7zip)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y jq aria2 p7zip-full ffmpeg
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
         with:
           bun-version: latest
 
-      # کش yt-dlp
       - name: Get latest yt-dlp version tag
         id: ytdlp_version
-        run: echo "tag=$(curl -sL https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest | jq -r .tag_name)" >> $GITHUB_OUTPUT
+        run: |
+          echo "tag=$(curl -sL https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest \
+            | jq -r .tag_name)" >> $GITHUB_OUTPUT
 
       - name: Cache yt-dlp binary
         id: cache-ytdlp
@@ -57,21 +63,11 @@ jobs:
       - name: Install yt-dlp if not cached
         if: steps.cache-ytdlp.outputs.cache-hit != 'true'
         run: |
-          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+          sudo curl -L \
+            https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp \
+            -o /usr/local/bin/yt-dlp
           sudo chmod a+rx /usr/local/bin/yt-dlp
 
-      # ابزارهای apt فقط در صورت نیاز
-      - name: Install apt tools only if missing
-        run: |
-          if ! command -v aria2c &>/dev/null || ! command -v 7z &>/dev/null; then
-            sudo apt-get update -qq
-            sudo apt-get install -y --no-install-recommends aria2 p7zip-full
-          fi
-          if ! command -v ffmpeg &>/dev/null; then
-            sudo apt-get install -y --no-install-recommends ffmpeg
-          fi
-
-      # نصب پکیج‌های پایتون برای اسکرپر Pornhub
       - name: Install Python dependencies
         run: pip install --quiet requests beautifulsoup4
 
@@ -88,89 +84,100 @@ jobs:
       - name: Setup Bunkr script
         run: |
           cat << 'EOF' > bunkr.py
-          import os, sys, json, time, base64, requests
-          from math import floor
-          from itertools import cycle
-          from urllib.parse import urlparse
+import os, sys, json, time, base64, requests
+from math import floor
+from itertools import cycle
+from urllib.parse import urlparse
 
-          BUNKRR_API = "https://bunkr.cr/api/vs"
-          BUNKRR_DOMAINS = ("bunkr.si", "bunkr.fi", "bunkr.ru", "bunkr.cr", "bunkr.rip", "bunkrr.su")
-          BUNKRR_DOWNLOAD_HEADERS = {"User-Agent": "Mozilla/5.0", "Referer": "https://get.bunkrr.su/"}
-          _offline_subs = set()
+BUNKRR_API = "https://bunkr.cr/api/vs"
+BUNKRR_DOMAINS = ("bunkr.si", "bunkr.fi", "bunkr.ru", "bunkr.cr", "bunkr.rip", "bunkrr.su")
+BUNKRR_DOWNLOAD_HEADERS = {"User-Agent": "Mozilla/5.0", "Referer": "https://get.bunkrr.su/"}
+_offline_subs = set()
 
-          def is_bunkr_url(url): return any(dom in url for dom in BUNKRR_DOMAINS)
-          
-          def get_slug(url): return __import__("re").search(r"/([a-zA-Z0-9_-]+)$", url).group(1) if __import__("re").search(r"/([a-zA-Z0-9_-]+)$", url) else None
-          
-          def fetch_api(url):
-              slug = get_slug(url)
-              if not slug: return None
-              for dom in (BUNKRR_API.split("/")[2], *_offline_subs):
-                  try:
-                      resp = requests.post(f"https://{dom}/api/vs", json={"slug": slug}, headers=BUNKRR_DOWNLOAD_HEADERS, timeout=30)
-                      if resp.status_code == 200: return resp.json()
-                      if resp.status_code == 502: _offline_subs.add(dom)
-                  except: continue
-              return None
+def get_slug(url):
+    import re
+    m = re.search(r"/([a-zA-Z0-9_-]+)$", url)
+    return m.group(1) if m else None
 
-          def decrypt(api_resp):
-              try:
-                  t, enc = api_resp["timestamp"], base64.b64decode(api_resp["url"])
-                  dec = bytearray(b ^ next(cycle(f"SECRET_KEY_{floor(t/3600)}".encode("utf-8"))) for b in enc)
-                  return dec.decode("utf-8", errors="ignore")
-              except: return None
+def fetch_api(url):
+    slug = get_slug(url)
+    if not slug:
+        return None
+    for dom in (BUNKRR_API.split("/")[2], *_offline_subs):
+        try:
+            resp = requests.post(
+                f"https://{dom}/api/vs",
+                json={"slug": slug},
+                headers=BUNKRR_DOWNLOAD_HEADERS,
+                timeout=30
+            )
+            if resp.status_code == 200:
+                return resp.json()
+            if resp.status_code == 502:
+                _offline_subs.add(dom)
+        except:
+            continue
+    return None
 
-          if __name__ == "__main__":
-              url = sys.argv[1]
-              outdir = sys.argv[2]
-              api_resp = fetch_api(url)
-              dl_link = decrypt(api_resp) if api_resp else None
-              if dl_link:
-                  filepath = os.path.join(outdir, urlparse(dl_link).path.rstrip("/").split("/")[-1])
-                  resp = requests.get(dl_link, headers=BUNKRR_DOWNLOAD_HEADERS, stream=True)
-                  with open(filepath, "wb") as f:
-                      for c in resp.iter_content(8192): f.write(c) if c else None
-          EOF
+def decrypt(api_resp):
+    try:
+        t = api_resp["timestamp"]
+        enc = base64.b64decode(api_resp["url"])
+        key = f"SECRET_KEY_{floor(t/3600)}".encode("utf-8")
+        dec = bytearray(b ^ next(cycle(key)) for b in enc)
+        return dec.decode("utf-8", errors="ignore")
+    except:
+        return None
 
-      - name: Download & Process Files (Supports Multiple URLs)
+if __name__ == "__main__":
+    url = sys.argv[1]
+    outdir = sys.argv[2]
+    api_resp = fetch_api(url)
+    dl_link = decrypt(api_resp) if api_resp else None
+    if dl_link:
+        filename = urlparse(dl_link).path.rstrip("/").split("/")[-1]
+        filepath = os.path.join(outdir, filename)
+        resp = requests.get(dl_link, headers=BUNKRR_DOWNLOAD_HEADERS, stream=True)
+        with open(filepath, "wb") as f:
+            for c in resp.iter_content(8192):
+                if c:
+                    f.write(c)
+EOF
+
+      - name: Download & Process Files
         shell: bash
         run: |
           RAW_URLS="${{ github.event.inputs.url }}"
           QUALITY="${{ github.event.inputs.quality }}"
-          
+
           FORMATTED_URLS=$(echo "$RAW_URLS" | tr ',' ' ' | tr '\n' ' ')
-          
+
           rm -rf tmp_downloads
           mkdir -p tmp_downloads dl
-          
-          # انتخاب کیفیت
+
+          # Quality selection
           if [[ "$QUALITY" == *"720p"* ]]; then
-            YTDLP_F="-f bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4][height<=720]/best --merge-output-format mp4"
+            YTDLP_F="-f bestvideo[height<=720]+bestaudio/best[height<=720] --merge-output-format mp4"
           elif [[ "$QUALITY" == *"480p"* ]]; then
-            YTDLP_F="-f bestvideo[ext=mp4][height<=480]+bestaudio[ext=m4a]/best[ext=mp4][height<=480]/best --merge-output-format mp4"
+            YTDLP_F="-f bestvideo[height<=480]+bestaudio/best[height<=480] --merge-output-format mp4"
           elif [[ "$QUALITY" == *"360p"* ]]; then
-            YTDLP_F="-f bestvideo[ext=mp4][height<=360]+bestaudio[ext=m4a]/best[ext=mp4][height<=360]/best --merge-output-format mp4"
+            YTDLP_F="-f bestvideo[height<=360]+bestaudio/best[height<=360] --merge-output-format mp4"
           elif [[ "$QUALITY" == *"Audio"* ]]; then
             YTDLP_F="-x --audio-format mp3"
           else
             YTDLP_F="--merge-output-format mp4"
           fi
 
-          # (نقل‌قول‌های داخلی تصحیح شد) دانلودر سریع
           YTDLP_FAST="--downloader aria2c --downloader-args \"aria2c:-x 4 -s 4 -j 4\" --concurrent-fragments 4"
 
           for URL in $FORMATTED_URLS; do
-            [ -z "$URL" ] && continue
-            echo "==========================================="
-            echo "Processing URL: $URL"
-            echo "==========================================="
+            [[ -z "$URL" ]] && continue
+            echo "Processing: $URL"
 
-            # ---- Pornhub Model / Creator Page ----
+            # Pornhub model page scraper
             if echo "$URL" | grep -qE "pornhub\.(com|org|net)/(model|pornstar)/"; then
-              echo "Scraping Pornhub model page: $URL"
-              # اسکریپت داخلی برای جمع‌آوری همه لینک‌های ویدئو از صفحات مدل
-              python3 << 'PYEOF' "$URL" > ph_videos.txt
-import sys, requests, time, re
+              python3 - "$URL" << 'PYEOF' > ph_videos.txt
+import sys, requests, time
 from bs4 import BeautifulSoup
 
 model_url = sys.argv[1].rstrip('/')
@@ -182,54 +189,49 @@ while True:
     try:
         resp = requests.get(page_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
         resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, 'html.parser')
+        soup = BeautifulSoup(resp.text, "html.parser")
     except:
         break
 
     found = False
-    for a in soup.find_all('a', href=True):
-        href = a['href']
-        if '/view_video.php?viewkey=' in href:
-            full = f"https://www.pornhub.com{href}" if not href.startswith('http') else href
+    for a in soup.find_all("a", href=True):
+        if "/view_video.php?viewkey=" in a['href']:
+            full = a['href']
+            if not full.startswith("http"):
+                full = "https://www.pornhub.com" + full
             video_urls.append(full)
             found = True
 
     if not found:
         break
-    page += 1
-    time.sleep(1)   # محدودیت نرخ
 
-for url in video_urls:
-    print(url)
+    page += 1
+    time.sleep(1)
+
+for u in video_urls:
+    print(u)
 PYEOF
 
               if [ -s ph_videos.txt ]; then
-                echo "Found $(wc -l < ph_videos.txt) videos. Starting download..."
-                # دانلود دسته‌ای با yt-dlp (batch-file)
                 COOKIE_ARG=""
-                [ -s youtube_cookies.txt ] && COOKIE_ARG="--cookies youtube_cookies.txt"
+                [[ -s youtube_cookies.txt ]] && COOKIE_ARG="--cookies youtube_cookies.txt"
+
                 yt-dlp --js-runtimes bun:bun $COOKIE_ARG $YTDLP_FAST $YTDLP_F \
                   -o "tmp_downloads/%(title)s.%(ext)s" --batch-file ph_videos.txt
-              else
-                echo "No videos found on this model page."
               fi
               rm -f ph_videos.txt
 
-            # ---- Bunkr ----
-            elif echo "$URL" | grep -qE "(bunkr\.si|bunkr\.fi|bunkr\.ru|bunkr\.cr|bunkr\.rip|bunkrr\.su)"; then
-              echo "Downloading from Bunkr..."
+            elif echo "$URL" | grep -qE "bunkr\.(si|fi|ru|cr|rip)|bunkrr\.su"; then
               python3 bunkr.py "$URL" "tmp_downloads"
 
-            # ---- YouTube / Twitch / supported streaming ----
-            elif echo "$URL" | grep -qE "(youtube\.com|youtu\.be|twitch\.tv|reddit\.com|vimeo|soundcloud)"; then
-              echo "Downloading with yt-dlp..."
+            elif echo "$URL" | grep -qE "(youtube|youtu\.be|twitch\.tv|reddit\.com|vimeo|soundcloud)"; then
               COOKIE_ARG=""
-              [ -s youtube_cookies.txt ] && COOKIE_ARG="--cookies youtube_cookies.txt"
-              yt-dlp --js-runtimes bun:bun $COOKIE_ARG $YTDLP_FAST $YTDLP_F -o "tmp_downloads/%(title)s.%(ext)s" "$URL"
+              [[ -s youtube_cookies.txt ]] && COOKIE_ARG="--cookies youtube_cookies.txt"
 
-            # ---- لینک مستقیم / ناشناخته ----
+              yt-dlp --js-runtimes bun:bun $COOKIE_ARG $YTDLP_FAST $YTDLP_F \
+                -o "tmp_downloads/%(title)s.%(ext)s" "$URL"
+
             else
-              echo "Downloading direct file with aria2..."
               aria2c --split=4 --max-connection-per-server=4 --dir="tmp_downloads" "$URL"
             fi
           done
@@ -239,96 +241,87 @@ PYEOF
         run: |
           set -euo pipefail
 
-          HAS_PASS="${{ github.event.inputs.password }}"
+          PASS="${{ github.event.inputs.password }}"
           LIMIT=$((95 * 1024 * 1024))
 
           : > new_files.txt
-          mkdir -p dl
 
           for FILE in tmp_downloads/*; do
-            [ -f "$FILE" ] || continue
+            [[ ! -f "$FILE" ]] && continue
 
             SIZE=$(stat -c%s "$FILE")
-            BASENAME=$(basename "$FILE")
+            NAME=$(basename "$FILE")
 
-            rm -f "dl/${BASENAME}" "dl/${BASENAME}.7z" "dl/${BASENAME}.7z".*
+            rm -f "dl/${NAME}" "dl/${NAME}.7z" "dl/${NAME}.7z".*
 
-            if [ "$SIZE" -gt "$LIMIT" ] || [ -n "$HAS_PASS" ]; then
-              echo "Compressing/Splitting with 7z: $BASENAME"
-
-              if [ -n "$HAS_PASS" ]; then
-                7z a -t7z -mx=0 -mhe=on -p"$HAS_PASS" -v95m "dl/${BASENAME}.7z" "$FILE"
+            if [[ "$SIZE" -gt "$LIMIT" || -n "$PASS" ]]; then
+              if [[ -n "$PASS" ]]; then
+                7z a -t7z -mx=0 -mhe=on -p"$PASS" -v95m "dl/${NAME}.7z" "$FILE"
               else
-                7z a -t7z -mx=0 -v95m "dl/${BASENAME}.7z" "$FILE"
+                7z a -t7z -mx=0 -v95m "dl/${NAME}.7z" "$FILE"
               fi
 
-              for PART in "dl/${BASENAME}.7z".*; do
-                [ -f "$PART" ] || continue
-                basename "$PART" >> new_files.txt
+              for P in dl/${NAME}.7z.*; do
+                [[ -f "$P" ]] && basename "$P" >> new_files.txt
               done
             else
-              echo "File is under 95MB. Copying raw file..."
-              cp -f "$FILE" "dl/$BASENAME"
-              echo "$BASENAME" >> new_files.txt
+              cp -f "$FILE" "dl/$NAME"
+              echo "$NAME" >> new_files.txt
             fi
           done
-
-          rm -rf tmp_downloads
 
       - name: Update Links.md
         shell: bash
         run: |
-          [ ! -f new_files.txt ] && exit 0
-          
           REPO="${{ github.repository }}"
           BRANCH="${GITHUB_REF_NAME}"
-          
-          HEADER="## 🔗 Direct Download Links\n> Click on any link below to start downloading directly.<br><br/>\n\n"
-          
+
+          HEADER="## 🔗 Direct Download Links\n> Click to download.\n\n"
+
           echo "### 📅 $(TZ='Asia/Tehran' date +'%Y-%m-%d %H:%M') IR" > current_run.md
-          
-          while IFS= read -r FNAME; do
-            ENCODED_NAME=$(python3 -c "import urllib.parse; print(urllib.parse.quote(input()))" <<< "$FNAME")
-            RAW_URL="https://github.com/$REPO/raw/$BRANCH/dl/$ENCODED_NAME"
-            
-            DISPLAY_NAME=$(echo "$FNAME" | sed -E 's/android[0-9]+\+_//g; s/-release//g')
-            
-            export FNAME_ENV="$FNAME"
-            SIZE_STR=$(python3 -c "import os; fname = os.environ.get('FNAME_ENV'); path = f'dl/{fname}'; size = os.path.getsize(path) if os.path.exists(path) else 0; print(f'{size/1048576:.1f}MB' if size >= 1048576 else f'{size//1024}KB')")
-            
-            EXT="${FNAME##*.}"
+
+          while IFS= read -r NAME; do
+            ENCODED=$(python3 -c "import urllib.parse; print(urllib.parse.quote('''$NAME'''))")
+            RAW="https://github.com/$REPO/raw/$BRANCH/dl/$ENCODED"
+
+            CLEAN=$(echo "$NAME" | sed -E 's/android[0-9]\+_//g; s/-release//g')
+
+            SIZE=$(python3 - << EOF
+import os
+p = "dl/$NAME"
+s = os.path.getsize(p)
+print(f"{s/1048576:.1f}MB" if s >= 1048576 else f"{s//1024}KB")
+EOF
+)
+
+            EXT="${NAME##*.}"
             case "$EXT" in
-              apk)             ICON="📱" ;;
+              apk) ICON="📱" ;;
               mp4|mkv|avi|mov) ICON="🎬" ;;
               mp3|m4a|flac|ogg) ICON="🎵" ;;
-              zip|z[0-9]*|7z|001|002|003|004|005|006|007|008|009) ICON="🗜️" ;;
-              *)               ICON="📥" ;;
+              7z|zip|[0-9][0-9][0-9]) ICON="🗜️" ;;
+              *) ICON="📥" ;;
             esac
-            
-            echo "- $ICON [$DISPLAY_NAME]($RAW_URL) \`$SIZE_STR\`" >> current_run.md
-            echo "" >> current_run.md
+
+            echo "- $ICON [$CLEAN]($RAW) \`$SIZE\`" >> current_run.md
           done < new_files.txt
-          
-          echo "---" >> current_run.md
-          echo "" >> current_run.md
-          
-          if [ -f Links.md ]; then
-            tail -n +4 Links.md > old_links.md 2>/dev/null || touch old_links.md
+
+          echo -e "\n---\n" >> current_run.md
+
+          if [[ -f Links.md ]]; then
+            tail -n +2 Links.md > old.md
             echo -e "$HEADER" > Links.md
-            cat current_run.md old_links.md >> Links.md
-            rm old_links.md
+            cat current_run.md old.md >> Links.md
+            rm old.md
           else
             echo -e "$HEADER" > Links.md
             cat current_run.md >> Links.md
           fi
-          
-          rm -f new_files.txt current_run.md
 
       - name: Push to Repository
         run: |
-          BRANCH="${GITHUB_REF_NAME}"
           git config user.name "NET-Sentinel Bot"
           git config user.email "224584266+NetSentinel-Bot@users.noreply.github.com"
           git add dl/ Links.md
-          git commit -m "Add downloaded files via Panel [skip ci]" || echo "Nothing to commit"
-          git push origin HEAD:$BRANCH
+          git commit -m "Add downloaded files via Panel [skip ci]" || true
+          git push origin HEAD:${GITHUB_REF_NAME}
