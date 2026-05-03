@@ -154,7 +154,7 @@ jobs:
           fi
 
           # دانلودر سریع با aria2c و دانلود همزمان قطعات
-          YTDLP_FAST=(--downloader aria2c --downloader-args "aria2c:-x 4 -s 4 -j 4" --concurrent-fragments 4)
+          YTDLP_FAST=(--downloader aria2c --downloader-args "aria2c:-x 16 -s 16 -j 16 -k 1M --file-allocation=none --summary-interval=15" --concurrent-fragments 16)
 
           for URL in $FORMATTED_URLS; do
             if [ -z "$URL" ]; then continue; fi
@@ -178,7 +178,7 @@ jobs:
             else
               echo "Downloading direct file with aria2..."
               # افزایش split برای سرعت بیشتر
-              aria2c --split=4 --max-connection-per-server=4 --dir="tmp_downloads" "$URL"
+              aria2c --split=16 --max-connection-per-server=16 --min-split-size=1M --file-allocation=none --dir="tmp_downloads" "$URL"
             fi
           done
 
