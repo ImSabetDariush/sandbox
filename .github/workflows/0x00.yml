@@ -1,4 +1,4 @@
-name: 0x00 dl (Optimized)
+name: 0x00 dl
 
 on:
   workflow_dispatch:
@@ -22,16 +22,6 @@ on:
         required: false
         type: string
         default: ''
-      parallel_downloads:
-        description: 'Number of parallel downloads (1-4)'
-        required: false
-        type: choice
-        options:
-          - '2'
-          - '3'
-          - '4'
-          - '1'
-        default: '3'
 
 jobs:
   download-and-save:
@@ -46,33 +36,41 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Cache Dependencies
-        uses: actions/cache@v4
-        id: cache-deps
+      # نصب bun با کش اتوماتیک (خیلی سریع‌تر از curl)
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
         with:
-          path: |
-            /usr/local/bin/yt-dlp
-            ~/.bun
-          key: deps-${{ runner.os }}-v2
+          bun-version: latest
 
-      - name: Fast Install Dependencies
-        if: steps.cache-deps.outputs.cache-hit != 'true'
+      # کش هوشمند yt-dlp با کلید بر اساس آخرین نسخه
+      - name: Get latest yt-dlp version tag
+        id: ytdlp_version
+        run: echo "tag=$(curl -sL https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest | jq -r .tag_name)" >> $GITHUB_OUTPUT
+
+      - name: Cache yt-dlp binary
+        id: cache-ytdlp
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/bin/yt-dlp
+          key: yt-dlp-${{ runner.os }}-${{ steps.ytdlp_version.outputs.tag }}
+
+      - name: Install yt-dlp if not cached
+        if: steps.cache-ytdlp.outputs.cache-hit != 'true'
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends aria2 ffmpeg p7zip-full
-          
           sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
           sudo chmod a+rx /usr/local/bin/yt-dlp
-          
-          curl -fsSL https://bun.com/install | bash
-          echo "$HOME/.bun/bin" >> $GITHUB_PATH
 
-      - name: Install Missing Packages (Cache Hit)
-        if: steps.cache-deps.outputs.cache-hit == 'true'
+      # ابزارهای apt فقط در صورت نیاز (بدون آپدیت اضافه)
+      - name: Install apt tools only if missing
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends aria2 ffmpeg p7zip-full
-          echo "$HOME/.bun/bin" >> $GITHUB_PATH
+          if ! command -v aria2c &>/dev/null || ! command -v 7z &>/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends aria2 p7zip-full
+          fi
+          # ffmpeg معمولاً روی رانر هست، اگر نبود نصب کن
+          if ! command -v ffmpeg &>/dev/null; then
+            sudo apt-get install -y --no-install-recommends ffmpeg
+          fi
 
       - name: Setup YouTube Cookies 
         env:
@@ -84,14 +82,13 @@ jobs:
             touch youtube_cookies.txt
           fi
 
-      - name: Setup Bunkr script (Optimized)
+      - name: Setup Bunkr script
         run: |
           cat << 'EOF' > bunkr.py
           import os, sys, json, time, base64, requests
           from math import floor
           from itertools import cycle
           from urllib.parse import urlparse
-          from concurrent.futures import ThreadPoolExecutor
 
           BUNKRR_API = "https://bunkr.cr/api/vs"
           BUNKRR_DOMAINS = ("bunkr.si", "bunkr.fi", "bunkr.ru", "bunkr.cr", "bunkr.rip", "bunkrr.su")
@@ -120,13 +117,6 @@ jobs:
                   return dec.decode("utf-8", errors="ignore")
               except: return None
 
-          def download_chunk(url, start, end, part_path):
-              headers = {**BUNKRR_DOWNLOAD_HEADERS, "Range": f"bytes={start}-{end}"}
-              resp = requests.get(url, headers=headers, stream=True, timeout=60)
-              with open(part_path, "wb") as f:
-                  for chunk in resp.iter_content(65536):
-                      if chunk: f.write(chunk)
-
           if __name__ == "__main__":
               url = sys.argv[1]
               outdir = sys.argv[2]
@@ -134,54 +124,23 @@ jobs:
               dl_link = decrypt(api_resp) if api_resp else None
               if dl_link:
                   filepath = os.path.join(outdir, urlparse(dl_link).path.rstrip("/").split("/")[-1])
-                  
-                  # Get file size
-                  head = requests.head(dl_link, headers=BUNKRR_DOWNLOAD_HEADERS, timeout=30)
-                  total_size = int(head.headers.get("Content-Length", 0))
-                  
-                  # Multi-threaded download for files > 10MB
-                  if total_size > 10 * 1024 * 1024:
-                      num_parts = 4
-                      part_size = total_size // num_parts
-                      parts = []
-                      
-                      with ThreadPoolExecutor(max_workers=num_parts) as executor:
-                          futures = []
-                          for i in range(num_parts):
-                              start = i * part_size
-                              end = start + part_size - 1 if i < num_parts - 1 else total_size - 1
-                              part_path = f"{filepath}.part{i}"
-                              parts.append(part_path)
-                              futures.append(executor.submit(download_chunk, dl_link, start, end, part_path))
-                          
-                          for f in futures: f.result()
-                      
-                      # Merge parts
-                      with open(filepath, "wb") as outfile:
-                          for part in parts:
-                              with open(part, "rb") as infile:
-                                  outfile.write(infile.read())
-                              os.remove(part)
-                  else:
-                      # Single-threaded for small files
-                      resp = requests.get(dl_link, headers=BUNKRR_DOWNLOAD_HEADERS, stream=True)
-                      with open(filepath, "wb") as f:
-                          for c in resp.iter_content(65536): 
-                              if c: f.write(c)
+                  resp = requests.get(dl_link, headers=BUNKRR_DOWNLOAD_HEADERS, stream=True)
+                  with open(filepath, "wb") as f:
+                      for c in resp.iter_content(8192): f.write(c) if c else None
           EOF
 
-      - name: Download & Process Files (Parallel)
+      - name: Download & Process Files (Supports Multiple URLs)
         shell: bash
         run: |
           RAW_URLS="${{ github.event.inputs.url }}"
           QUALITY="${{ github.event.inputs.quality }}"
-          PARALLEL="${{ github.event.inputs.parallel_downloads }}"
           
-          FORMATTED_URLS=$(echo "$RAW_URLS" | tr ',' '\n' | tr ' ' '\n' | grep -v '^$')
+          FORMATTED_URLS=$(echo "$RAW_URLS" | tr ',' ' ' | tr '\n' ' ')
           
           rm -rf tmp_downloads
           mkdir -p tmp_downloads dl
           
+          # انتخاب کیفیت
           if [[ "$QUALITY" == *"720p"* ]]; then
             YTDLP_F="-f bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4][height<=720]/best --merge-output-format mp4"
           elif [[ "$QUALITY" == *"480p"* ]]; then
@@ -194,44 +153,36 @@ jobs:
             YTDLP_F="--merge-output-format mp4"
           fi
 
-          # Create download function
-          download_url() {
-            local URL="$1"
-            [ -z "$URL" ] && return
+          # دانلودر سریع با aria2c و دانلود همزمان قطعات
+          YTDLP_FAST="--downloader aria2c --downloader-args 'aria2c:-x 4 -s 4 -j 4' --concurrent-fragments 4"
+
+          for URL in $FORMATTED_URLS; do
+            if [ -z "$URL" ]; then continue; fi
             
             echo "==========================================="
             echo "Processing URL: $URL"
             echo "==========================================="
 
             if echo "$URL" | grep -qE "(bunkr\.si|bunkr\.fi|bunkr\.ru|bunkr\.cr|bunkr\.rip|bunkrr\.su)"; then
-              echo "Downloading from Bunkr (Multi-threaded)..."
+              echo "Downloading from Bunkr..."
               python3 bunkr.py "$URL" "tmp_downloads"
               
             elif echo "$URL" | grep -qE "(youtube\.com|youtu\.be|twitch\.tv|reddit\.com|vimeo|soundcloud)"; then
-              echo "Downloading with yt-dlp (aria2c accelerated)..."
+              echo "Downloading with yt-dlp..."
               COOKIE_ARG=""
               [ -s youtube_cookies.txt ] && COOKIE_ARG="--cookies youtube_cookies.txt"
               
-              yt-dlp --js-runtimes bun:$HOME/.bun/bin/bun \
-                     --downloader aria2c \
-                     --downloader-args "aria2c:-x 8 -s 8 -k 5M" \
-                     $COOKIE_ARG $YTDLP_F \
-                     -o "tmp_downloads/%(title)s.%(ext)s" "$URL"
+              # bun در PATH است، مسیر قبلی لازم نیست
+              yt-dlp --js-runtimes bun:bun $COOKIE_ARG $YTDLP_FAST $YTDLP_F -o "tmp_downloads/%(title)s.%(ext)s" "$URL"
               
             else
-              echo "Downloading direct file with aria2 (8 connections)..."
-              aria2c --split=8 --max-connection-per-server=8 --min-split-size=5M \
-                     --max-concurrent-downloads=1 --dir="tmp_downloads" "$URL"
+              echo "Downloading direct file with aria2..."
+              # افزایش split برای سرعت بیشتر
+              aria2c --split=4 --max-connection-per-server=4 --dir="tmp_downloads" "$URL"
             fi
-          }
+          done
 
-          export -f download_url
-          export YTDLP_F
-
-          # Parallel execution
-          echo "$FORMATTED_URLS" | xargs -P "$PARALLEL" -I {} bash -c 'download_url "$@"' _ {}
-
-      - name: Compress & Split (Fast)
+      - name: Compress & Split
         shell: bash
         run: |
           set -euo pipefail
@@ -251,12 +202,12 @@ jobs:
             rm -f "dl/${BASENAME}" "dl/${BASENAME}.7z" "dl/${BASENAME}.7z".*
 
             if [ "$SIZE" -gt "$LIMIT" ] || [ -n "$HAS_PASS" ]; then
-              echo "Compressing/Splitting: $BASENAME"
+              echo "Compressing/Splitting with 7z: $BASENAME"
 
               if [ -n "$HAS_PASS" ]; then
-                7z a -t7z -mx=1 -mmt=on -mhe=on -p"$HAS_PASS" -v95m "dl/${BASENAME}.7z" "$FILE"
+                7z a -t7z -mx=0 -mhe=on -p"$HAS_PASS" -v95m "dl/${BASENAME}.7z" "$FILE"
               else
-                7z a -t7z -mx=1 -mmt=on -v95m "dl/${BASENAME}.7z" "$FILE"
+                7z a -t7z -mx=0 -v95m "dl/${BASENAME}.7z" "$FILE"
               fi
 
               for PART in "dl/${BASENAME}.7z".*; do
@@ -264,7 +215,7 @@ jobs:
                 basename "$PART" >> new_files.txt
               done
             else
-              echo "File under 95MB. Copying..."
+              echo "File is under 95MB. Copying raw file..."
               cp -f "$FILE" "dl/$BASENAME"
               echo "$BASENAME" >> new_files.txt
             fi
