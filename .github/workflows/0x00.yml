@@ -4,129 +4,128 @@ on:
   workflow_dispatch:
     inputs:
       url:
-        description: 'Target URLs (Separate with space, comma, or new line)'
+        description: 'URL(s) to download (separate multiple URLs with space)'
         required: true
-        type: string
-      quality:
-        description: 'Video Quality (for supported extractors)'
-        required: true
-        type: choice
-        options:
-          - '480p (MP4 format - Recommended for <95MB)'
-          - '720p (MP4 format)'
-          - '360p (MP4 format)'
-          - 'Audio (MP3 format)'
-          - 'Best (Highest available)'
-      password:
-        description: 'ZIP Password (Optional - No ZIP applied if empty & under 95MB)'
+      max_pornhub_videos:
+        description: 'Max recent videos to download from Pornhub (0 = all)'
         required: false
-        type: string
-        default: ''
+        default: '10'
+      # (اختیاری) فشرده‌سازی نهایی
+      compress:
+        description: 'Compress into 95MB parts?'
+        required: false
+        default: 'true'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  download-and-save:
+  download:
     runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
+    timeout-minutes: 360
 
-      # نصب bun با کش خودکار
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 🐰 Setup Bun (with built-in caching)
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
         with:
           bun-version: latest
 
-      # کش yt-dlp
-      - name: Get latest yt-dlp version tag
-        id: ytdlp_version
-        run: echo "tag=$(curl -sL https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest | jq -r .tag_name)" >> $GITHUB_OUTPUT
-
+      # کش yt-dlp (نسخه‌بندی بر اساس آخرین release tag)
       - name: Cache yt-dlp binary
         id: cache-ytdlp
         uses: actions/cache@v4
         with:
-          path: /usr/local/bin/yt-dlp
-          key: yt-dlp-${{ runner.os }}-${{ steps.ytdlp_version.outputs.tag }}
+          path: ~/.local/bin/yt-dlp
+          key: ytdlp-${{ runner.os }}-${{ steps.ytdlp-version.outputs.version }}
 
-      - name: Install yt-dlp if not cached
+      - name: Get latest yt-dlp version
+        id: ytdlp-version
         if: steps.cache-ytdlp.outputs.cache-hit != 'true'
         run: |
-          sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
-          sudo chmod a+rx /usr/local/bin/yt-dlp
+          VERSION=$(curl -s https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest | jq -r .tag_name)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      # ابزارهای apt فقط در صورت نیاز
-      - name: Install apt tools only if missing
+      - name: Download yt-dlp
+        if: steps.cache-ytdlp.outputs.cache-hit != 'true'
         run: |
-          if ! command -v aria2c &>/dev/null || ! command -v 7z &>/dev/null; then
-            sudo apt-get update -qq
-            sudo apt-get install -y --no-install-recommends aria2 p7zip-full
-          fi
-          if ! command -v ffmpeg &>/dev/null; then
-            sudo apt-get install -y --no-install-recommends ffmpeg
-          fi
+          mkdir -p ~/.local/bin
+          curl -L "https://github.com/yt-dlp/yt-dlp/releases/download/${{ steps.ytdlp-version.outputs.version }}/yt-dlp_linux" -o ~/.local/bin/yt-dlp
+          chmod +x ~/.local/bin/yt-dlp
 
-      # نصب پکیج‌های پایتون برای اسکرپر Pornhub
-      - name: Install Python dependencies
-        run: pip install --quiet requests beautifulsoup4
+      - name: Add yt-dlp to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      - name: Setup YouTube Cookies
+      # ابزارهای لازم
+      - name: Install required packages
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq aria2 jq parallel || true
+
+      # آرایه‌های ثابت برای yt-dlp
+      - name: Prepare yt-dlp options
+        id: ytdlp-opts
+        run: |
+          export YTDLP_F=(--no-playlist --no-warnings --progress --newline --embed-metadata --merge-output-format mkv)
+          echo "YTDLP_F=${YTDLP_F[*]}" >> "$GITHUB_ENV"
+
+      # ----- کوکی‌های YouTube -----
+      - name: Setup YouTube cookies
         env:
-          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
+          YT_COOKIES: ${{ secrets.YT_COOKIES }}
         run: |
-          if [ -n "$YOUTUBE_COOKIES" ]; then
-            echo "$YOUTUBE_COOKIES" > youtube_cookies.txt
+          if [ -n "$YT_COOKIES" ]; then
+            echo "$YT_COOKIES" > yt_cookies.txt
           else
-            touch youtube_cookies.txt
+            touch yt_cookies.txt
           fi
 
-      # مرحله اصلی دانلود
-      - name: Download & Process Files (Supports Multiple URLs)
-        shell: bash
+      # ----- کوکی‌های Pornhub -----
+      - name: Setup Pornhub cookies
+        env:
+          PH_COOKIES: ${{ secrets.PORNHUB_COOKIES }}
         run: |
-          RAW_URLS="${{ github.event.inputs.url }}"
-          QUALITY="${{ github.event.inputs.quality }}"
-
-          FORMATTED_URLS=$(echo "$RAW_URLS" | tr ',' ' ' | tr '\n' ' ')
-
-          rm -rf tmp_downloads
-          mkdir -p tmp_downloads dl
-
-          # انتخاب کیفیت به صورت یک آرایه Bash
-          case "$QUALITY" in
-            *720p*)   YTDLP_F=(-f "bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4][height<=720]/best" --merge-output-format mp4) ;;
-            *480p*)   YTDLP_F=(-f "bestvideo[ext=mp4][height<=480]+bestaudio[ext=m4a]/best[ext=mp4][height<=480]/best" --merge-output-format mp4) ;;
-            *360p*)   YTDLP_F=(-f "bestvideo[ext=mp4][height<=360]+bestaudio[ext=m4a]/best[ext=mp4][height<=360]/best" --merge-output-format mp4) ;;
-            *Audio*)  YTDLP_F=(-x --audio-format mp3) ;;
-            *)        YTDLP_F=(--merge-output-format mp4) ;;
-          esac
-
-          # آرایه برای کوکی (در صورت وجود)
-          COOKIE_ARG=()
-          if [ -s youtube_cookies.txt ]; then
-            COOKIE_ARG=(--cookies youtube_cookies.txt)
+          if [ -n "$PH_COOKIES" ]; then
+            echo "$PH_COOKIES" > ph_cookies.txt
+          else
+            touch ph_cookies.txt
           fi
 
-          for URL in $FORMATTED_URLS; do
-            [ -z "$URL" ] && continue
-            echo "==========================================="
-            echo "Processing URL: $URL"
-            echo "==========================================="
+      # دانلود اصلی
+      - name: Download content
+        run: |
+          mkdir -p tmp_downloads
+          # خواندن URLهای ورودی (جدا شده با فاصله)
+          URLS=(${{ github.event.inputs.url }})
+
+          for URL in "${URLS[@]}"; do
+            echo "Processing: $URL"
 
             # ---- Pornhub Model / Creator Page ----
             if echo "$URL" | grep -qE "pornhub\.(com|org|net)/(model|pornstar)/"; then
               echo "Scraping Pornhub model page: $URL"
-              python3 ph_scraper.py "$URL" > ph_videos.txt
+              python3 ph_scraper.py "$URL" > ph_videos_full.txt
+
+              # محدود کردن به N ویدیوی آخر
+              LIMIT="${{ github.event.inputs.max_pornhub_videos }}"
+              if [ "$LIMIT" != "0" ] && [ -n "$LIMIT" ]; then
+                head -n "$LIMIT" ph_videos_full.txt > ph_videos.txt
+              else
+                cp ph_videos_full.txt ph_videos.txt
+              fi
 
               if [ -s ph_videos.txt ]; then
-                echo "Found $(wc -l < ph_videos.txt) videos. Starting download..."
+                echo "Found $(wc -l < ph_videos.txt) videos (limited to $LIMIT). Downloading..."
+
+                PH_COOKIE_ARG=()
+                [ -s ph_cookies.txt ] && PH_COOKIE_ARG=(--cookies ph_cookies.txt)
+
                 yt-dlp --js-runtimes bun:bun \
-                  "${COOKIE_ARG[@]}" \
+                  "${PH_COOKIE_ARG[@]}" \
                   --downloader aria2c \
                   --downloader-args "aria2c:-x 4 -s 4 -j 4" \
                   --concurrent-fragments 4 \
@@ -134,20 +133,36 @@ jobs:
                   -o "tmp_downloads/%(title)s.%(ext)s" \
                   --batch-file ph_videos.txt
               else
-                echo "No videos found on this model page."
+                echo "No videos found for this model."
               fi
-              rm -f ph_videos.txt
+              rm -f ph_videos_full.txt ph_videos.txt
 
-            # ---- Bunkr ----
-            elif echo "$URL" | grep -qE "(bunkr\.si|bunkr\.fi|bunkr\.ru|bunkr\.cr|bunkr\.rip|bunkrr\.su)"; then
-              echo "Downloading from Bunkr..."
-              python3 bunkr.py "$URL" "tmp_downloads"
+            # ---- Bunkr Album ----
+            elif echo "$URL" | grep -qE "bunkr\.(is|ru|si|la|ac|media)/"; then
+              echo "Extracting Bunkr album: $URL"
+              python3 bunkr.py "$URL" > bunkr_links.txt
 
-            # ---- YouTube / Twitch / سرویس‌های پشتیبانی‌شده ----
-            elif echo "$URL" | grep -qE "(youtube\.com|youtu\.be|twitch\.tv|reddit\.com|vimeo|soundcloud)"; then
-              echo "Downloading with yt-dlp..."
+              if [ -s bunkr_links.txt ]; then
+                echo "Found $(wc -l < bunkr_links.txt) files. Downloading..."
+                yt-dlp --js-runtimes bun:bun \
+                  --downloader aria2c \
+                  --downloader-args "aria2c:-x 4 -s 4 -j 4" \
+                  --concurrent-fragments 4 \
+                  "${YTDLP_F[@]}" \
+                  -o "tmp_downloads/%(title)s.%(ext)s" \
+                  --batch-file bunkr_links.txt
+              else
+                echo "No links extracted from Bunkr."
+              fi
+              rm -f bunkr_links.txt
+
+            # ---- YouTube / Twitch / Reddit ----
+            elif echo "$URL" | grep -qE "(youtube\.com|youtu\.be|twitch\.tv|reddit\.com|redd\.it)"; then
+              YT_COOKIE_ARG=()
+              [ -s yt_cookies.txt ] && YT_COOKIE_ARG=(--cookies yt_cookies.txt)
+
               yt-dlp --js-runtimes bun:bun \
-                "${COOKIE_ARG[@]}" \
+                "${YT_COOKIE_ARG[@]}" \
                 --downloader aria2c \
                 --downloader-args "aria2c:-x 4 -s 4 -j 4" \
                 --concurrent-fragments 4 \
@@ -155,108 +170,45 @@ jobs:
                 -o "tmp_downloads/%(title)s.%(ext)s" \
                 "$URL"
 
-            # ---- لینک مستقیم / ناشناخته ----
+            # ---- Direct links (or fallback) ----
             else
-              echo "Downloading direct file with aria2..."
-              aria2c --split=4 --max-connection-per-server=4 --dir="tmp_downloads" "$URL"
+              echo "Treating as direct link. Downloading with aria2c..."
+              aria2c -x 4 -s 4 -j 4 --dir=tmp_downloads "$URL"
             fi
           done
 
-      - name: Compress & Split
-        shell: bash
+      # فشرده‌سازی و تقسیم (اختیاری)
+      - name: Compress and split
+        if: github.event.inputs.compress != 'false'
         run: |
-          set -euo pipefail
-
-          HAS_PASS="${{ github.event.inputs.password }}"
-          LIMIT=$((95 * 1024 * 1024))
-
-          : > new_files.txt
-          mkdir -p dl
-
-          for FILE in tmp_downloads/*; do
-            [ -f "$FILE" ] || continue
-
-            SIZE=$(stat -c%s "$FILE")
-            BASENAME=$(basename "$FILE")
-
-            rm -f "dl/${BASENAME}" "dl/${BASENAME}.7z" "dl/${BASENAME}.7z".*
-
-            if [ "$SIZE" -gt "$LIMIT" ] || [ -n "$HAS_PASS" ]; then
-              echo "Compressing/Splitting with 7z: $BASENAME"
-
-              if [ -n "$HAS_PASS" ]; then
-                7z a -t7z -mx=0 -mhe=on -p"$HAS_PASS" -v95m "dl/${BASENAME}.7z" "$FILE"
-              else
-                7z a -t7z -mx=0 -v95m "dl/${BASENAME}.7z" "$FILE"
+          if ls tmp_downloads/* >/dev/null 2>&1; then
+            cd tmp_downloads
+            for f in *; do
+              if [ -f "$f" ]; then
+                tar -czf - "$f" | split -b 95M - "${f}.part."
+                rm -f "$f"
               fi
-
-              for PART in "dl/${BASENAME}.7z".*; do
-                [ -f "$PART" ] || continue
-                basename "$PART" >> new_files.txt
-              done
-            else
-              echo "File is under 95MB. Copying raw file..."
-              cp -f "$FILE" "dl/$BASENAME"
-              echo "$BASENAME" >> new_files.txt
-            fi
-          done
-
-          rm -rf tmp_downloads
-
-      - name: Update Links.md
-        shell: bash
-        run: |
-          [ ! -f new_files.txt ] && exit 0
-
-          REPO="${{ github.repository }}"
-          BRANCH="${GITHUB_REF_NAME}"
-
-          HEADER="## 🔗 Direct Download Links\n> Click on any link below to start downloading directly.<br><br/>\n\n"
-
-          echo "### 📅 $(TZ='Asia/Tehran' date +'%Y-%m-%d %H:%M') IR" > current_run.md
-
-          while IFS= read -r FNAME; do
-            ENCODED_NAME=$(python3 -c "import urllib.parse; print(urllib.parse.quote(input()))" <<< "$FNAME")
-            RAW_URL="https://github.com/$REPO/raw/$BRANCH/dl/$ENCODED_NAME"
-
-            DISPLAY_NAME=$(echo "$FNAME" | sed -E 's/android[0-9]+\+_//g; s/-release//g')
-
-            export FNAME_ENV="$FNAME"
-            SIZE_STR=$(python3 -c "import os; fname = os.environ.get('FNAME_ENV'); path = f'dl/{fname}'; size = os.path.getsize(path) if os.path.exists(path) else 0; print(f'{size/1048576:.1f}MB' if size >= 1048576 else f'{size//1024}KB')")
-
-            EXT="${FNAME##*.}"
-            case "$EXT" in
-              apk)             ICON="📱" ;;
-              mp4|mkv|avi|mov) ICON="🎬" ;;
-              mp3|m4a|flac|ogg) ICON="🎵" ;;
-              zip|z[0-9]*|7z|001|002|003|004|005|006|007|008|009) ICON="🗜️" ;;
-              *)               ICON="📥" ;;
-            esac
-
-            echo "- $ICON [$DISPLAY_NAME]($RAW_URL) \`$SIZE_STR\`" >> current_run.md
-            echo "" >> current_run.md
-          done < new_files.txt
-
-          echo "---" >> current_run.md
-          echo "" >> current_run.md
-
-          if [ -f Links.md ]; then
-            tail -n +4 Links.md > old_links.md 2>/dev/null || touch old_links.md
-            echo -e "$HEADER" > Links.md
-            cat current_run.md old_links.md >> Links.md
-            rm old_links.md
-          else
-            echo -e "$HEADER" > Links.md
-            cat current_run.md >> Links.md
+            done
           fi
 
-          rm -f new_files.txt current_run.md
-
-      - name: Push to Repository
+      # به‌روزرسانی Links.md و commit
+      - name: Update Links.md
         run: |
-          BRANCH="${GITHUB_REF_NAME}"
-          git config user.name "NET-Sentinel Bot"
-          git config user.email "224584266+NetSentinel-Bot@users.noreply.github.com"
-          git add dl/ Links.md
-          git commit -m "Add downloaded files via Panel [skip ci]" || echo "Nothing to commit"
-          git push origin HEAD:$BRANCH
+          echo "# Downloads ($(date -u +"%Y-%m-%d %H:%M UTC"))" > Links.md
+          ls tmp_downloads/ | while read line; do
+            echo "- [$line]($line)" >> Links.md
+          done
+          cat Links.md
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit & Push
+        run: |
+          git add -A
+          git diff --staged --quiet || (
+            git commit -m "Auto upload $(date -u +"%Y-%m-%d %H:%M UTC")"
+            git push
+          )
