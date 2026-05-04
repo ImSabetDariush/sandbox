@@ -1,51 +1,64 @@
-import os, sys, json, time, base64, requests
-from math import floor
-from itertools import cycle
-from urllib.parse import urlparse
+#!/usr/bin/env python3
+"""
+Bunkr Album Link Extractor
+Usage: bunkr.py <album_url>
+Output: One link per line (direct download or media page)
+"""
+import requests
+import re
+import sys
+import json
 
-BUNKRR_API = "https://bunkr.cr/api/vs"
-BUNKRR_DOMAINS = ("bunkr.si", "bunkr.fi", "bunkr.ru", "bunkr.cr", "bunkr.rip", "bunkrr.su")
-BUNKRR_DOWNLOAD_HEADERS = {"User-Agent": "Mozilla/5.0", "Referer": "https://get.bunkrr.su/"}
-_offline_subs = set()
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36"
+)
+HEADERS = {"User-Agent": USER_AGENT}
 
-def is_bunkr_url(url): return any(dom in url for dom in BUNKRR_DOMAINS)
+def extract_album_id(url):
+    # لینک‌های Bunkr معمولاً به شکل https://bunkr.is/a/abc123 یا https://bunkr.is/album/abc123
+    m = re.search(r'/(?:a|album)/([a-zA-Z0-9]+)', url)
+    return m.group(1) if m else None
 
-def get_slug(url):
-    match = __import__("re").search(r"/([a-zA-Z0-9_-]+)$", url)
-    return match.group(1) if match else None
+def get_album_files(album_id):
+    api_url = f"https://bunkr.is/api/api/{album_id}/getFiles"
+    resp = requests.get(api_url, headers=HEADERS, timeout=15)
+    resp.raise_for_status()
+    data = resp.json()
+    # ساختار پاسخ: {"data": {"items": [{"file": {"urlDownload": "..."}}, ...]}}
+    items = data.get("data", {}).get("items", [])
+    links = []
+    for item in items:
+        file_info = item.get("file", {})
+        download_url = file_info.get("urlDownload") or file_info.get("cd?
+        # گاهی لینک مستقیم در urlDownload هست
+        if download_url:
+            links.append(download_url)
+    return links
 
-def fetch_api(url):
-    slug = get_slug(url)
-    if not slug: return None
-    for dom in (BUNKRR_API.split("/")[2], *_offline_subs):
-        try:
-            resp = requests.post(f"https://{dom}/api/vs", json={"slug": slug}, headers=BUNKRR_DOWNLOAD_HEADERS, timeout=30)
-            if resp.status_code == 200:
-                return resp.json()
-            if resp.status_code == 502:
-                _offline_subs.add(dom)
-        except:
-            continue
-    return None
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: bunkr.py <album_url>", file=sys.stderr)
+        sys.exit(1)
 
-def decrypt(api_resp):
+    album_url = sys.argv[1]
+    album_id = extract_album_id(album_url)
+    if not album_id:
+        print("Could not extract album ID from URL.", file=sys.stderr)
+        sys.exit(1)
+
     try:
-        t, enc = api_resp["timestamp"], base64.b64decode(api_resp["url"])
-        key_cycle = cycle(f"SECRET_KEY_{floor(t/3600)}".encode("utf-8"))
-        dec = bytearray(b ^ next(key_cycle) for b in enc)
-        return dec.decode("utf-8", errors="ignore")
-    except:
-        return None
+        links = get_album_files(album_id)
+    except Exception as e:
+        print(f"Error fetching album: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    if not links:
+        print("No downloadable files found.", file=sys.stderr)
+    else:
+        for link in links:
+            print(link)
 
 if __name__ == "__main__":
-    url = sys.argv[1]
-    outdir = sys.argv[2]
-    api_resp = fetch_api(url)
-    dl_link = decrypt(api_resp) if api_resp else None
-    if dl_link:
-        filepath = os.path.join(outdir, urlparse(dl_link).path.rstrip("/").split("/")[-1])
-        resp = requests.get(, headers=BUNKRR_DOWNLOAD_HEADERS, stream=True)
-        with open(filepath, "wb") as f:
-            for chunk in resp.iter_content(8192):
-                if chunk:
-                    f.write(chunk)
+    main()
