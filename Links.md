@@ -2,6 +2,12 @@
 > Click on any link below to start downloading directly.<br><br/>
 
 
+### 📅 2026-05-04 19:03 IR
+- 🎬 [آموزش مدار الکتریکی 2 -  مدارهای با القای تزویج متقابل - جلسه سوم.mp4](https://github.com/ImSabetDariush/sandbox/raw/main/dl/%D8%A2%D9%85%D9%88%D8%B2%D8%B4%20%D9%85%D8%AF%D8%A7%D8%B1%20%D8%A7%D9%84%DA%A9%D8%AA%D8%B1%DB%8C%DA%A9%DB%8C%202%20-%20%20%D9%85%D8%AF%D8%A7%D8%B1%D9%87%D8%A7%DB%8C%20%D8%A8%D8%A7%20%D8%A7%D9%84%D9%82%D8%A7%DB%8C%20%D8%AA%D8%B2%D9%88%DB%8C%D8%AC%20%D9%85%D8%AA%D9%82%D8%A7%D8%A8%D9%84%20-%20%D8%AC%D9%84%D8%B3%D9%87%20%D8%B3%D9%88%D9%85.mp4) `33.2MB`
+
+---
+
+
 ### 📅 2026-05-04 18:50 IR
 - 🎬 [آموزش مدار الکتریکی 2 -  مدارهای تزویج متقابل - جلسه اول.mp4](https://github.com/ImSabetDariush/sandbox/raw/main/dl/%D8%A2%D9%85%D9%88%D8%B2%D8%B4%20%D9%85%D8%AF%D8%A7%D8%B1%20%D8%A7%D9%84%DA%A9%D8%AA%D8%B1%DB%8C%DA%A9%DB%8C%202%20-%20%20%D9%85%D8%AF%D8%A7%D8%B1%D9%87%D8%A7%DB%8C%20%D8%AA%D8%B2%D9%88%DB%8C%D8%AC%20%D9%85%D8%AA%D9%82%D8%A7%D8%A8%D9%84%20-%20%D8%AC%D9%84%D8%B3%D9%87%20%D8%A7%D9%88%D9%84.mp4) `46.2MB`
 
